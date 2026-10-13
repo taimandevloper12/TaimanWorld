@@ -1,0 +1,1945 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050a1f">
+<meta name="color-scheme" content="dark">
+<title>TAIMAN: PARALLEL</title>
+<meta name="description" content="TAIMAN: PARALLEL — o‘z raqamli olamingni yarat, topshiriqlarni bajar, yangi hududlarni och.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%23070d28' stroke='%233de0ff' stroke-width='2'/%3E%3Cpath d='M10 11h12M16 11v11' stroke='%23fff' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<!--
+  TAIMAN: PARALLEL — frontend prototipi (bitta fayl)
+  Arxitektura:
+   1. CONFIG      — XP, daraja chegaralari va mukofotlar (shu yerda oson o‘zgartiriladi)
+   2. DATA        — buyumlar, hududlar, topshiriqlar
+   3. UTILS       — DOM yordamchilari (xavfsiz: matn faqat textContent orqali)
+   4. STATE       — holat, localStorage, tekshiruv (sanitize)
+   5. LOGIC       — XP, daraja, topshiriq, hudud, buyum qoidalari
+   6. UI          — toast, modal, bayram oynasi, HUD, navigatsiya
+   7. SCENE       — SVG olam sahnasi
+   8. VIEWS       — 6 ta bo‘lim
+   9. FLOW        — boshlang‘ich ekran va tanishtiruv
+  10. BG / TG     — fon canvas, Telegram Mini App tayyorligi
+-->
+
+<style>
+/* =========================================================
+   1. TOKENLAR VA BAZA
+   ========================================================= */
+:root{
+  --bg0:#02040c;--bg1:#050a1f;--bg2:#0a1438;
+  --panel:rgba(14,24,64,.58);--panel-solid:#0d1740;
+  --line:rgba(130,170,255,.16);--line-strong:rgba(130,170,255,.34);
+  --text:#e9f0ff;--muted:#9aabd8;--dim:#6b7cb0;
+  --cyan:#3de0ff;--blue:#4d7cff;--violet:#9a6bff;
+  --good:#47e3a6;--warn:#ffcf5a;--danger:#ff6b8a;
+  --r-lg:22px;--r-md:16px;--r-sm:12px;
+  --shadow:0 18px 50px rgba(0,0,0,.45);
+  --font:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Roboto,Arial,sans-serif;
+  --safe-t:env(safe-area-inset-top,0px);
+  --safe-b:env(safe-area-inset-bottom,0px);
+  --nav-h:66px;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%;color-scheme:dark}
+body{
+  margin:0;min-height:100vh;min-height:100dvh;color:var(--text);font-family:var(--font);
+  line-height:1.5;overflow-x:hidden;-webkit-tap-highlight-color:transparent;
+  background:radial-gradient(120% 80% at 50% -10%,#11236a 0%,#070d28 46%,#02040c 100%) fixed;
+}
+h1,h2,h3,h4,p{margin:0}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none;touch-action:manipulation}
+input{font:inherit;color:inherit}
+ul{margin:0;padding:0;list-style:none}
+[hidden]{display:none!important}
+:focus-visible{outline:2px solid var(--cyan);outline-offset:2px;border-radius:8px}
+h2[tabindex="-1"]:focus{outline:none}
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+#bg-canvas{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}
+.screen{position:relative;z-index:1;min-height:100vh;min-height:100dvh}
+.screen-in{animation:fadeIn .5s ease both}
+.ico{display:inline-flex;flex:none}
+.ico svg{display:block}
+
+/* =========================================================
+   2. KOMPONENTLAR
+   ========================================================= */
+.panel{
+  position:relative;border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow);
+  background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,0) 38%),var(--panel);
+}
+@supports((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  .panel{-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
+}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 20px;
+  border-radius:14px;font-weight:600;letter-spacing:.01em;text-align:center;
+  border:1px solid var(--line-strong);background:rgba(77,124,255,.13);color:var(--text);
+  transition:transform .15s ease,background .2s ease,box-shadow .2s ease,border-color .2s ease;
+}
+.btn:hover{background:rgba(77,124,255,.24);border-color:rgba(150,185,255,.55)}
+.btn:active{transform:scale(.96)}
+.btn[disabled]{opacity:.45;cursor:not-allowed;transform:none}
+.btn-primary{background:linear-gradient(135deg,#38d6ff,#5b8cff);border-color:transparent;color:#04102b;box-shadow:0 8px 26px rgba(61,160,255,.32)}
+.btn-primary:hover{background:linear-gradient(135deg,#6be4ff,#7ba2ff);box-shadow:0 10px 30px rgba(61,160,255,.45)}
+.btn-ghost{background:transparent}
+.btn-danger{border-color:rgba(255,107,138,.5);background:rgba(255,107,138,.12);color:#ffc2d0}
+.btn-danger:hover{background:rgba(255,107,138,.24);border-color:rgba(255,107,138,.8)}
+.btn-lg{min-height:54px;padding:0 32px;font-size:1.05rem;border-radius:16px}
+.btn-sm{min-height:40px;padding:0 14px;font-size:.9rem;border-radius:12px}
+.btn-glow{animation:glowBtn 2.2s ease-in-out infinite}
+.chip{
+  display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:2px 10px;border-radius:999px;
+  font-size:.78rem;font-weight:600;border:1px solid var(--line);background:rgba(120,160,255,.1);color:var(--muted);white-space:nowrap;
+}
+.chip.xp{color:#bff3ff;background:rgba(61,224,255,.12);border-color:rgba(61,224,255,.3)}
+.chip.item{color:#d8c8ff;background:rgba(154,107,255,.14);border-color:rgba(154,107,255,.32)}
+.chip.good{color:#b5ffe0;background:rgba(71,227,166,.12);border-color:rgba(71,227,166,.3)}
+.chip.warn{color:#ffe6a6;background:rgba(255,207,90,.12);border-color:rgba(255,207,90,.3)}
+.chip.lock{color:#a6b3dc;background:rgba(120,140,200,.12)}
+.bar{position:relative;height:10px;border-radius:99px;background:rgba(120,160,255,.14);overflow:hidden;border:1px solid var(--line)}
+.bar>i{position:absolute;inset:0 auto 0 0;width:0;border-radius:99px;background:linear-gradient(90deg,#38d6ff,#6a7bff 60%,#9a6bff);box-shadow:0 0 14px rgba(80,170,255,.6);transition:width .9s cubic-bezier(.2,.8,.2,1)}
+.avatar{display:grid;place-items:center;border-radius:50%;flex:none;border:2px solid rgba(255,255,255,.22);box-shadow:0 4px 18px rgba(0,0,0,.35)}
+.avatar svg{display:block}
+.muted{color:var(--muted)}
+.eyebrow{font-size:.75rem;letter-spacing:.22em;text-transform:uppercase;color:var(--cyan);font-weight:700}
+
+/* =========================================================
+   3. BOSHLANG‘ICH EKRAN
+   ========================================================= */
+#splash{display:grid;place-items:center;padding:20px;overflow:hidden}
+.splash-scene{position:absolute;inset:0;z-index:0;opacity:.95}
+.splash-scene svg{width:100%;height:100%;display:block}
+.splash-scrim{position:absolute;inset:0;z-index:1;background:radial-gradient(70% 60% at 50% 45%,rgba(3,6,18,.62),rgba(3,6,18,.15) 70%),linear-gradient(180deg,rgba(3,6,18,.35),rgba(3,6,18,.1) 40%,rgba(3,6,18,.55))}
+.splash-card{position:relative;z-index:2;width:min(560px,100%);padding:clamp(22px,5vw,40px);text-align:center;background:linear-gradient(180deg,rgba(255,255,255,.06),transparent 40%),rgba(6,12,36,.62);display:flex;flex-direction:column;align-items:center;gap:16px}
+.logo{display:inline-flex;align-items:center;gap:12px}
+.wordmark{font-weight:800;letter-spacing:.22em;font-size:1.05rem}
+.wordmark b{font-weight:700;color:var(--cyan);letter-spacing:.18em}
+.splash-card h1{font-size:clamp(1.7rem,6.2vw,2.6rem);line-height:1.12;font-weight:800;letter-spacing:-.01em;background:linear-gradient(120deg,#fff,#a9d9ff 55%,#c9b2ff);-webkit-background-clip:text;background-clip:text;color:transparent}
+.lead{color:var(--muted);max-width:44ch;font-size:1.02rem}
+.welcome{color:#bff3ff;font-weight:600}
+.slogan{font-size:.85rem;color:var(--dim);letter-spacing:.04em}
+
+/* =========================================================
+   4. TANISHTIRUV
+   ========================================================= */
+#onboard{display:grid;place-items:center;padding:16px;background:radial-gradient(90% 70% at 50% 20%,rgba(30,50,140,.35),rgba(2,4,12,.9))}
+.ob-card{width:min(560px,100%);max-height:calc(100dvh - 32px);overflow:auto;padding:clamp(20px,5vw,34px);display:flex;flex-direction:column;gap:18px;background:rgba(8,14,42,.78)}
+.ob-step{display:flex;flex-direction:column;gap:14px;animation:viewIn .4s ease both}
+.ob-step h2{font-size:clamp(1.35rem,4.8vw,1.8rem);line-height:1.2}
+.ob-step p{color:var(--muted)}
+.ob-points{display:grid;gap:10px}
+.ob-points li{display:flex;gap:12px;align-items:flex-start;padding:12px;border-radius:14px;background:rgba(100,140,255,.08);border:1px solid var(--line)}
+.ob-points li .ico{color:var(--cyan);margin-top:2px}
+.ob-points b{display:block;color:var(--text)}
+.ob-points span.t{color:var(--muted);font-size:.92rem}
+.ob-dots{display:flex;gap:8px;justify-content:center}
+.ob-dots i{width:8px;height:8px;border-radius:50%;background:rgba(150,180,255,.25);transition:all .3s}
+.ob-dots i.on{width:26px;border-radius:99px;background:linear-gradient(90deg,var(--cyan),var(--violet))}
+.ob-nav{display:flex;gap:10px;justify-content:space-between;flex-wrap:wrap}
+.ob-nav .grow{flex:1}
+.field{display:flex;flex-direction:column;gap:8px}
+.field label{font-weight:600;font-size:.92rem}
+.input{width:100%;min-height:50px;padding:0 16px;border-radius:14px;border:1px solid var(--line-strong);background:rgba(4,8,28,.7);outline:none;font-size:1rem;transition:border-color .2s,box-shadow .2s}
+.input:focus{border-color:var(--cyan);box-shadow:0 0 0 3px rgba(61,224,255,.18)}
+.field-msg{min-height:1.2em;font-size:.85rem;color:var(--danger)}
+.avatar-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.avatar-opt{display:grid;place-items:center;padding:8px;border-radius:16px;border:2px solid transparent;background:rgba(100,140,255,.08);min-height:68px;transition:transform .15s,border-color .2s,background .2s}
+.avatar-opt:hover{background:rgba(100,140,255,.18)}
+.avatar-opt:active{transform:scale(.94)}
+.avatar-opt[aria-checked="true"]{border-color:var(--cyan);background:rgba(61,224,255,.14);box-shadow:0 0 18px rgba(61,224,255,.25)}
+
+/* =========================================================
+   5. ASOSIY QOBIQ: YON MENYU, HUD, PASTKI MENYU
+   ========================================================= */
+#app{display:grid;grid-template-columns:268px minmax(0,1fr)}
+.sidebar{position:sticky;top:0;height:100vh;height:100dvh;padding:22px 16px;display:flex;flex-direction:column;gap:22px;border-right:1px solid var(--line);background:linear-gradient(180deg,rgba(8,14,44,.82),rgba(3,6,18,.82))}
+.brand{display:flex;align-items:center;gap:12px;padding:4px 8px}
+.brand .wordmark{font-size:.9rem;line-height:1.15}
+.brand .wordmark b{display:block;font-size:.7rem}
+.nav{display:flex;flex-direction:column;gap:6px}
+.nav-btn{position:relative;display:flex;align-items:center;gap:14px;min-height:50px;padding:0 14px;border-radius:14px;color:var(--muted);font-weight:600;text-align:left;border:1px solid transparent;transition:background .2s,color .2s,border-color .2s,transform .15s}
+.nav-btn:hover{background:rgba(100,140,255,.1);color:var(--text)}
+.nav-btn:active{transform:scale(.97)}
+.nav-btn[aria-current="page"]{color:#fff;background:linear-gradient(90deg,rgba(61,224,255,.18),rgba(154,107,255,.12));border-color:rgba(61,224,255,.35);box-shadow:inset 3px 0 0 var(--cyan),0 0 22px rgba(61,224,255,.12)}
+.nav-btn[aria-current="page"] .ico{color:var(--cyan)}
+.nav-btn .dot{position:absolute;top:10px;right:12px;width:10px;height:10px;border-radius:50%;background:var(--warn);box-shadow:0 0 10px var(--warn);animation:pulseDot 1.8s ease-in-out infinite}
+.side-foot{margin-top:auto;font-size:.78rem;color:var(--dim);padding:0 8px}
+.main-col{min-width:0;display:flex;flex-direction:column}
+.hud{
+  position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:16px;
+  padding:12px clamp(14px,3vw,34px);padding-top:calc(12px + var(--safe-t));
+  background:linear-gradient(180deg,rgba(3,6,18,.9),rgba(3,6,18,.62));border-bottom:1px solid var(--line);
+}
+@supports((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.hud{-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}}
+.hud-user{display:flex;align-items:center;gap:12px;margin-right:auto;min-width:0;text-align:left;border-radius:14px;padding:2px}
+.hud-name{display:flex;flex-direction:column;min-width:0;line-height:1.25}
+.hud-name b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
+.hud-name small{color:var(--muted)}
+.lvl-chip{padding:4px 12px;border-radius:99px;font-weight:800;font-size:.82rem;letter-spacing:.06em;background:linear-gradient(135deg,rgba(61,224,255,.25),rgba(154,107,255,.25));border:1px solid rgba(61,224,255,.45);color:#dff7ff;white-space:nowrap}
+.hud-bar-wrap{position:relative;display:flex;align-items:center;gap:12px;width:min(360px,38vw)}
+.hud-bar-wrap .bar{flex:1;height:12px}
+.xp-text{font-size:.8rem;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.xp-float{position:absolute;right:0;top:-6px;font-weight:800;color:var(--cyan);text-shadow:0 0 14px rgba(61,224,255,.8);animation:floatUp 1.3s ease-out forwards;pointer-events:none}
+#main{flex:1;min-width:0;padding:clamp(16px,3vw,34px);padding-bottom:calc(clamp(16px,3vw,34px) + 8px);width:100%;max-width:1180px;margin:0 auto}
+.view{animation:none}
+.view.view-in{animation:viewIn .42s cubic-bezier(.2,.8,.2,1) both}
+.view>header.vh{margin-bottom:20px;display:flex;flex-wrap:wrap;gap:10px 18px;align-items:flex-end;justify-content:space-between}
+.vh h2{font-size:clamp(1.55rem,4.6vw,2.2rem);line-height:1.15;font-weight:800;letter-spacing:-.01em}
+.vh p{color:var(--muted);margin-top:4px;max-width:60ch}
+.bottomnav{display:none}
+
+/* =========================================================
+   6. OLAMIM (SAHNA)
+   ========================================================= */
+.world-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(280px,1fr);gap:20px;align-items:start}
+.scene-box{position:relative;border-radius:var(--r-lg);overflow:hidden;border:1px solid var(--line-strong);box-shadow:var(--shadow),0 0 60px rgba(70,110,255,.15);aspect-ratio:1/1;max-height:76vh;width:100%;background:#050a22}
+.scene-box svg{width:100%;height:100%;display:block}
+.scene-hint{position:absolute;left:12px;bottom:12px;right:12px;display:flex;justify-content:space-between;gap:10px;pointer-events:none;font-size:.78rem}
+.scene-hint span{padding:6px 12px;border-radius:99px;background:rgba(3,6,18,.7);border:1px solid var(--line);color:var(--muted)}
+.side-stack{display:flex;flex-direction:column;gap:16px}
+.card{padding:18px;display:flex;flex-direction:column;gap:12px}
+.card h3{font-size:1.05rem}
+.card .row{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}
+.obj-chips{display:flex;flex-wrap:wrap;gap:8px}
+.obj-chip{display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:0 14px;border-radius:99px;border:1px solid var(--line);background:rgba(100,140,255,.1);font-size:.88rem;font-weight:600;transition:background .2s,border-color .2s,transform .15s}
+.obj-chip:hover{background:rgba(100,140,255,.22);border-color:var(--line-strong)}
+.obj-chip:active{transform:scale(.96)}
+.obj-chip.locked{color:var(--dim)}
+
+/* sahna ichidagi elementlar */
+.scene [data-obj]{cursor:pointer;outline:none;-webkit-tap-highlight-color:transparent}
+.scene [data-obj]:hover .body,.scene [data-obj]:focus-visible .body{filter:brightness(1.3)}
+.scene [data-obj]:focus-visible .hit{stroke:#3de0ff;stroke-width:3;stroke-dasharray:8 8}
+.scene .tw{animation:twinkle 4.5s ease-in-out infinite}
+.scene .float{animation:floaty 7s ease-in-out infinite}
+.scene .p-halo{animation:pulse 3.6s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+.scene .p-ring{animation:spin 20s linear infinite;transform-box:fill-box;transform-origin:center}
+.scene .p-ring2{animation:spin 12s linear infinite reverse;transform-box:fill-box;transform-origin:center}
+.scene .p-core{opacity:.4;transition:opacity 1s}
+.scene .p-extra{display:none}
+.scene.lv4 .p-core{opacity:1}
+.scene.lv4 .p-extra{display:inline}
+.scene .aurora{animation:drift 14s ease-in-out infinite alternate}
+.scene .mote{animation:rise 9s linear infinite;opacity:0}
+.scene .lockmark{opacity:0;transition:opacity .3s;pointer-events:none}
+.scene .locked .body{opacity:.4}
+.scene .locked .lockmark{opacity:1}
+.scene .decor{display:none}
+.scene.decor-on .decor{display:inline}
+.scene .lamp{animation:pulse 3s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+.scene.star-found .star{display:none}
+.scene .hint-ring{opacity:0}
+.scene.compass-on .hint-ring{opacity:1;animation:pulse 1.6s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+.scene .spark{animation:twinkle 2.6s ease-in-out infinite}
+
+/* =========================================================
+   7. KASHFIYOTLAR
+   ========================================================= */
+.region-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:18px}
+.region-card{display:flex;flex-direction:column;overflow:hidden;transition:transform .2s,border-color .2s,box-shadow .2s}
+.region-card:hover{transform:translateY(-3px);border-color:var(--line-strong)}
+.region-card.locked{border-style:dashed}
+.art{position:relative;aspect-ratio:200/110;overflow:hidden;border-bottom:1px solid var(--line)}
+.art svg{width:100%;height:100%;display:block}
+.art-island{background:linear-gradient(160deg,#102a7e,#1b1366)}
+.art-valley{background:linear-gradient(160deg,#0d3a8c,#2a1d8e)}
+.art-ruins{background:linear-gradient(160deg,#1d2a6c,#3a2377)}
+.art-gate{background:linear-gradient(160deg,#18135e,#4a1f8c)}
+.art-silence{background:linear-gradient(160deg,#080c2c,#1a1d5a)}
+.art-parallel{background:linear-gradient(160deg,#2a1b86,#0d6ea8)}
+.region-card.locked .art::after,.m-art.locked::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(135deg,rgba(2,4,12,.6) 0 8px,rgba(2,4,12,.74) 8px 16px)}
+.lock-badge{position:absolute;z-index:2;left:50%;top:50%;transform:translate(-50%,-50%);width:52px;height:52px;border-radius:50%;display:grid;place-items:center;background:rgba(4,8,26,.9);border:1px solid var(--line-strong);color:#cfe0ff}
+.region-body{padding:16px;display:flex;flex-direction:column;gap:10px;flex:1}
+.region-body h3{font-size:1.1rem}
+.region-body p{color:var(--muted);font-size:.93rem}
+.cond{font-size:.82rem;color:var(--dim);padding:8px 10px;border-radius:10px;background:rgba(100,130,220,.08);border:1px dashed var(--line)}
+.region-body .btn{margin-top:auto}
+
+/* =========================================================
+   8. TOPSHIRIQLAR
+   ========================================================= */
+.summary{padding:18px;display:flex;flex-direction:column;gap:12px;margin-bottom:18px}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+.tab{min-height:40px;padding:0 16px;border-radius:99px;border:1px solid var(--line);background:rgba(100,140,255,.08);font-weight:600;font-size:.9rem;color:var(--muted);transition:all .2s}
+.tab:hover{color:var(--text);background:rgba(100,140,255,.16)}
+.tab[aria-pressed="true"]{color:#04102b;background:linear-gradient(135deg,#38d6ff,#7ba2ff);border-color:transparent}
+.quest-list{display:grid;gap:14px}
+.quest{display:grid;grid-template-columns:auto 1fr auto;gap:16px;padding:18px;align-items:center;transition:border-color .25s,box-shadow .25s}
+.quest.ready{border-color:rgba(61,224,255,.55);box-shadow:var(--shadow),0 0 30px rgba(61,224,255,.14)}
+.quest.claimed{opacity:.72}
+.q-ico{width:50px;height:50px;border-radius:16px;display:grid;place-items:center;background:linear-gradient(135deg,rgba(61,224,255,.2),rgba(154,107,255,.2));border:1px solid var(--line-strong);color:var(--cyan)}
+.quest.claimed .q-ico{color:var(--good);background:rgba(71,227,166,.12)}
+.q-main{display:flex;flex-direction:column;gap:8px;min-width:0}
+.q-main h3{font-size:1.05rem}
+.q-main p{color:var(--muted);font-size:.92rem}
+.q-meta{display:flex;flex-wrap:wrap;gap:6px}
+.steps{display:grid;gap:4px;font-size:.85rem;color:var(--dim)}
+.steps li{display:flex;gap:8px;align-items:center}
+.steps li.ok{color:#b5ffe0}
+.q-act{display:flex;flex-direction:column;align-items:flex-end;gap:8px;min-width:150px}
+
+/* =========================================================
+   9. INVENTAR
+   ========================================================= */
+.inv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px}
+.item{padding:16px;display:flex;flex-direction:column;gap:12px}
+.item-top{display:flex;align-items:center;gap:14px}
+.item-ico{width:54px;height:54px;border-radius:18px;display:grid;place-items:center;border:1px solid var(--line-strong);background:rgba(100,140,255,.1);flex:none}
+.item-top h3{font-size:1.02rem;line-height:1.25}
+.qty{margin-left:auto;font-weight:800;font-size:1.15rem;color:#fff;font-variant-numeric:tabular-nums;padding:2px 10px;border-radius:10px;background:rgba(100,140,255,.18);border:1px solid var(--line)}
+.item p{color:var(--muted);font-size:.9rem;flex:1}
+.empty{padding:34px 20px;text-align:center;color:var(--muted)}
+
+/* =========================================================
+   10. DARAJAM
+   ========================================================= */
+.level-hero{display:grid;grid-template-columns:auto 1fr;gap:24px;padding:24px;align-items:center;margin-bottom:20px}
+.ring{position:relative;width:132px;height:132px}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring .track{stroke:rgba(120,160,255,.16)}
+.ring .prog{stroke:url(#ringGrad);transition:stroke-dashoffset 1s cubic-bezier(.2,.8,.2,1);filter:drop-shadow(0 0 6px rgba(61,224,255,.6))}
+.ring .center{position:absolute;inset:0;display:grid;place-content:center;text-align:center;line-height:1.1}
+.ring .center b{font-size:2rem}
+.ring .center small{color:var(--muted);letter-spacing:.14em;font-size:.68rem}
+.stages{display:grid;gap:16px;position:relative}
+.stage{padding:20px;display:flex;flex-direction:column;gap:12px}
+.stage.current{border-color:rgba(61,224,255,.55);box-shadow:var(--shadow),0 0 36px rgba(61,224,255,.14)}
+.stage.locked{opacity:.78;border-style:dashed}
+.stage-head{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.stage-num{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:1.2rem;background:linear-gradient(135deg,rgba(61,224,255,.25),rgba(154,107,255,.25));border:1px solid var(--line-strong)}
+.stage.locked .stage-num{background:rgba(100,120,190,.15);color:var(--dim)}
+.stage-head h3{font-size:1.15rem}
+.stage ul.perks{display:grid;gap:6px;color:var(--muted);font-size:.93rem}
+.perks li{display:flex;gap:8px;align-items:flex-start}
+.perks li .ico{color:var(--cyan);margin-top:3px}
+.notice{padding:12px 14px;border-radius:14px;font-size:.88rem;background:rgba(255,207,90,.08);border:1px solid rgba(255,207,90,.28);color:#ffe6a6}
+.special-stage{position:relative;overflow:hidden}
+.special-stage::before{content:"";position:absolute;right:-60px;top:-60px;width:220px;height:220px;border-radius:50%;background:radial-gradient(circle,rgba(154,107,255,.4),transparent 65%);animation:pulse 4s ease-in-out infinite}
+
+/* =========================================================
+   11. PROFIL
+   ========================================================= */
+.profile-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start}
+.profile-head{display:flex;align-items:center;gap:18px;padding:22px}
+.profile-head h3{font-size:1.4rem;overflow-wrap:anywhere}
+.stat-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.stat{padding:14px;border-radius:16px;background:rgba(100,140,255,.08);border:1px solid var(--line)}
+.stat small{display:block;color:var(--muted);font-size:.78rem;margin-bottom:2px}
+.stat b{font-size:1.15rem;overflow-wrap:anywhere}
+.set-row{display:flex;gap:14px;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--line)}
+.set-row:last-child{border-bottom:0}
+.set-row div{min-width:0}
+.set-row b{display:block}
+.set-row small{color:var(--muted)}
+.switch{position:relative;width:54px;height:32px;flex:none;border-radius:99px;border:1px solid var(--line-strong);background:rgba(100,120,190,.2);transition:background .25s}
+.switch::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#cfe0ff;transition:transform .25s cubic-bezier(.2,.8,.2,1),background .25s}
+.switch[aria-checked="true"]{background:linear-gradient(135deg,#38d6ff,#6a7bff)}
+.switch[aria-checked="true"]::after{transform:translateX(22px);background:#fff}
+.profile-form{display:flex;gap:10px;flex-wrap:wrap}
+.profile-form .input{flex:1;min-width:160px}
+
+/* =========================================================
+   12. TOAST, MODAL, BAYRAM OYNASI
+   ========================================================= */
+#toasts{position:fixed;z-index:200;top:calc(12px + var(--safe-t));right:14px;display:flex;flex-direction:column;gap:10px;width:min(360px,calc(100vw - 28px));pointer-events:none}
+.toast{pointer-events:auto;display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:14px;background:rgba(8,14,44,.94);border:1px solid var(--line-strong);box-shadow:var(--shadow);font-size:.92rem;opacity:0;transform:translateX(24px);transition:opacity .25s,transform .25s;cursor:pointer}
+.toast.in{opacity:1;transform:none}
+.t-dot{width:10px;height:10px;border-radius:50%;margin-top:6px;flex:none;background:var(--cyan);box-shadow:0 0 10px var(--cyan)}
+.toast.success .t-dot{background:var(--good);box-shadow:0 0 10px var(--good)}
+.toast.xp .t-dot{background:var(--violet);box-shadow:0 0 10px var(--violet)}
+.toast.warn .t-dot{background:var(--warn);box-shadow:0 0 10px var(--warn)}
+.modal-wrap{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:16px;background:rgba(2,4,14,.74);opacity:0;transition:opacity .22s}
+.modal-wrap.open{opacity:1}
+.modal{width:min(520px,100%);max-height:min(90dvh,760px);max-height:min(90vh,760px);overflow:auto;padding:22px;display:flex;flex-direction:column;gap:14px;background:rgba(9,16,48,.96);transform:translateY(16px) scale(.97);transition:transform .25s cubic-bezier(.2,.8,.2,1);outline:none}
+.modal-wrap.open .modal{transform:none}
+.modal-head{display:flex;align-items:center;gap:12px;justify-content:space-between}
+.modal-head h2{font-size:1.3rem;line-height:1.2}
+.icon-btn{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;color:var(--muted);flex:none;transition:background .2s,color .2s}
+.icon-btn:hover{background:rgba(100,140,255,.18);color:#fff}
+.modal-body{display:flex;flex-direction:column;gap:12px;color:var(--muted)}
+.modal-body p{color:var(--muted)}
+.m-tag{font-size:.78rem;letter-spacing:.14em;text-transform:uppercase;color:var(--cyan);font-weight:700}
+.m-art{position:relative;border-radius:14px;overflow:hidden;border:1px solid var(--line)}
+.m-art .art{border-bottom:0}
+.m-note{display:flex;gap:10px;align-items:center;padding:10px 12px;border-radius:12px;font-size:.9rem}
+.m-note.ok{background:rgba(71,227,166,.1);border:1px solid rgba(71,227,166,.3);color:#b5ffe0}
+.m-note.lock{background:rgba(120,140,200,.1);border:1px solid var(--line-strong);color:#c6d3f5}
+.m-lore{padding:12px 14px;border-radius:14px;background:rgba(100,140,255,.08);border:1px solid var(--line)}
+.m-lore h4{color:var(--text);margin-bottom:4px}
+.req-list{display:grid;gap:8px}
+.req-list li{display:flex;gap:10px;align-items:center;font-size:.92rem}
+.req-list li.ok{color:#b5ffe0}
+.req-list li.no{color:#ffc2d0}
+.modal-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.modal-actions .btn{flex:1 1 140px}
+.reward-row{display:flex;flex-wrap:wrap;gap:8px}
+#celebrate{position:fixed;inset:0;z-index:150;display:grid;place-items:center;padding:16px;background:radial-gradient(80% 70% at 50% 40%,rgba(30,40,130,.55),rgba(2,4,14,.92));animation:fadeIn .4s ease both;overflow:hidden}
+.cel-box{position:relative;z-index:2;width:min(480px,100%);max-height:calc(100dvh - 32px);overflow:auto;padding:28px 22px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:14px;background:rgba(8,14,44,.88);animation:popIn .55s cubic-bezier(.2,1.2,.3,1) both}
+.cel-box h2{font-size:clamp(1.9rem,8vw,2.8rem);line-height:1.05;font-weight:900;background:linear-gradient(120deg,#fff,#8fe9ff 50%,#c7a6ff);-webkit-background-clip:text;background-clip:text;color:transparent}
+.cel-box .sub{font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--cyan);font-size:.85rem}
+.cel-box p{color:var(--muted)}
+.cel-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;width:100%}
+.cel-actions .btn{flex:1 1 150px}
+.fx{position:absolute;inset:0;z-index:1;pointer-events:none;display:grid;place-items:center}
+.fx i.c{position:absolute;left:50%;top:50%;width:8px;height:14px;border-radius:3px;background:var(--cc);opacity:0;animation:burst 1.5s ease-out forwards;animation-delay:var(--dl)}
+.fx i.r{position:absolute;border-radius:50%;border:3px solid rgba(120,220,255,.7);width:80px;height:80px;opacity:0;animation:ringOut 2.4s ease-out infinite;animation-delay:var(--dl)}
+.portal-fx{position:relative;width:150px;height:190px;display:grid;place-items:center}
+.portal-fx .core{width:100px;height:140px;border-radius:50%;background:radial-gradient(circle,#fff,#9be8ff 30%,#6a5bff 65%,transparent 72%);animation:portalOpen 1.6s cubic-bezier(.2,.8,.2,1) both,pulse 3s ease-in-out 1.6s infinite}
+.portal-fx .rg{position:absolute;inset:0;border-radius:50%;border:3px dashed rgba(150,230,255,.8);animation:spin 8s linear infinite}
+.portal-fx .rg2{position:absolute;inset:14px 18px;border-radius:50%;border:3px solid rgba(180,140,255,.8);animation:spin 5s linear infinite reverse}
+
+/* =========================================================
+   13. ANIMATSIYALAR
+   ========================================================= */
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes viewIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@keyframes popIn{from{opacity:0;transform:scale(.8) translateY(20px)}to{opacity:1;transform:none}}
+@keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
+@keyframes pulse{0%,100%{transform:scale(.93);opacity:.75}50%{transform:scale(1.07);opacity:1}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes twinkle{0%,100%{opacity:.9}50%{opacity:.15}}
+@keyframes drift{from{transform:translateX(-26px)}to{transform:translateX(26px)}}
+@keyframes rise{0%{opacity:0;transform:translateY(0)}20%{opacity:.85}100%{opacity:0;transform:translateY(-110px)}}
+@keyframes floatUp{0%{opacity:0;transform:translateY(8px)}20%{opacity:1}100%{opacity:0;transform:translateY(-34px)}}
+@keyframes glowBtn{0%,100%{box-shadow:0 8px 26px rgba(61,160,255,.3)}50%{box-shadow:0 8px 40px rgba(61,224,255,.75)}}
+@keyframes pulseDot{0%,100%{transform:scale(.85);opacity:.7}50%{transform:scale(1.15);opacity:1}}
+@keyframes burst{0%{opacity:1;transform:translate(-50%,-50%) rotate(0)}100%{opacity:0;transform:translate(calc(-50% + var(--dx)),calc(-50% + var(--dy))) rotate(var(--rt))}}
+@keyframes ringOut{0%{opacity:.9;transform:scale(.4)}100%{opacity:0;transform:scale(6)}}
+@keyframes portalOpen{0%{transform:scale(.05) rotate(-90deg);opacity:0}100%{transform:scale(1) rotate(0);opacity:1}}
+
+/* Harakatni kamaytirish: tizim sozlamasi YOKI ilova sozlamasi */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;animation-delay:0s!important;transition-duration:.001ms!important;scroll-behavior:auto!important}
+}
+body.no-motion *,body.no-motion *::before,body.no-motion *::after{animation-duration:.001ms!important;animation-iteration-count:1!important;animation-delay:0s!important;transition-duration:.001ms!important}
+body.no-motion .scene .mote{display:none}
+
+/* =========================================================
+   14. RESPONSIV
+   ========================================================= */
+@media (max-width:1020px){
+  .world-grid{grid-template-columns:1fr}
+  .profile-grid{grid-template-columns:1fr}
+}
+@media (max-width:860px){
+  #app{grid-template-columns:minmax(0,1fr)}
+  .sidebar{display:none}
+  .bottomnav{
+    display:grid;grid-template-columns:repeat(6,1fr);position:fixed;left:0;right:0;bottom:0;z-index:40;
+    padding:6px 4px calc(6px + var(--safe-b));background:rgba(4,8,26,.94);border-top:1px solid var(--line-strong);
+  }
+  @supports((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.bottomnav{-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}}
+  .bottomnav .nav-btn{flex-direction:column;gap:3px;min-height:54px;padding:6px 2px;justify-content:center;font-size:.66rem;border-radius:12px;text-align:center;border:0;font-weight:600;letter-spacing:0}
+  .bottomnav .nav-btn .lbl{max-width:100%;white-space:nowrap}
+  .bottomnav .nav-btn[aria-current="page"]{box-shadow:inset 0 3px 0 var(--cyan);background:linear-gradient(180deg,rgba(61,224,255,.16),transparent)}
+  .bottomnav .nav-btn .dot{top:4px;right:calc(50% - 18px)}
+  #main{padding-bottom:calc(var(--nav-h) + var(--safe-b) + 24px)}
+  .hud{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"user chip" "bar bar";gap:8px 10px;padding-top:calc(10px + var(--safe-t))}
+  .hud-user{grid-area:user}
+  .lvl-chip{grid-area:chip}
+  .hud-bar-wrap{grid-area:bar;width:100%}
+  .hud-name b{max-width:48vw}
+  #toasts{left:50%;right:auto;transform:translateX(-50%)}
+  .scene-box{aspect-ratio:4/5;max-height:none}
+}
+@media (max-width:640px){
+  .quest{grid-template-columns:auto 1fr}
+  .q-act{grid-column:1/-1;align-items:stretch;min-width:0}
+  .q-act .btn{width:100%}
+  .level-hero{grid-template-columns:1fr;justify-items:center;text-align:center}
+  .region-grid,.inv-grid{grid-template-columns:1fr}
+  .modal-wrap{place-items:end center;padding:0}
+  .modal{border-radius:22px 22px 0 0;max-height:92dvh;padding-bottom:calc(22px + var(--safe-b))}
+  .avatar-grid{grid-template-columns:repeat(4,1fr);gap:8px}
+  .stat-grid{grid-template-columns:1fr 1fr}
+}
+@media (max-width:360px){
+  .bottomnav .nav-btn{font-size:.6rem}
+  .btn-lg{padding:0 20px}
+}
+</style>
+</head>
+<body>
+<noscript><p style="padding:24px;color:#fff;position:relative;z-index:5">Bu ilova ishlashi uchun JavaScript yoqilgan bo‘lishi kerak.</p></noscript>
+<canvas id="bg-canvas" aria-hidden="true"></canvas>
+
+<!-- ============ BOSHLANG‘ICH EKRAN ============ -->
+<div id="splash" class="screen">
+  <div class="splash-scene" id="splash-scene" aria-hidden="true"></div>
+  <div class="splash-scrim" aria-hidden="true"></div>
+  <section class="splash-card panel" aria-labelledby="splash-title">
+    <div class="logo"><span id="logo-mark"></span><span class="wordmark">TAIMAN<b>: PARALLEL</b></span></div>
+    <p class="eyebrow">Raqamli olam</p>
+    <h1 id="splash-title">Raqamli olaming seni kutmoqda</h1>
+    <p class="lead">O‘z olamingni yarat, topshiriqlar orqali tajriba to‘pla, yangi hududlarni och va bosqichma-bosqich parallel olamlar sari yo‘l ol.</p>
+    <p id="splash-welcome" class="welcome" hidden></p>
+    <button id="enter-btn" class="btn btn-primary btn-lg" type="button">Olamga kirish</button>
+    <p class="slogan">Sening olaming. Sening yo‘ling. Sening tarixing.</p>
+  </section>
+</div>
+
+<!-- ============ TANISHTIRUV ============ -->
+<div id="onboard" class="screen" hidden>
+  <div class="ob-card panel" role="dialog" aria-modal="true" aria-label="Tanishtiruv">
+    <div id="ob-content"></div>
+    <div class="ob-dots" id="ob-dots" aria-hidden="true"></div>
+    <div class="ob-nav" id="ob-nav"></div>
+  </div>
+</div>
+
+<!-- ============ ASOSIY ILOVA ============ -->
+<div id="app" class="screen" hidden>
+  <aside class="sidebar" aria-label="Yon menyu">
+    <div class="brand"><span id="brand-mark"></span><span class="wordmark">TAIMAN<b>PARALLEL</b></span></div>
+    <nav class="nav" id="side-nav" aria-label="Asosiy menyu"></nav>
+    <p class="side-foot">Tez o‘tish: klaviaturada 1–6 tugmalari.</p>
+  </aside>
+  <div class="main-col">
+    <header class="hud" id="hud">
+      <button class="hud-user" id="hud-user" type="button" aria-label="Profilga o‘tish">
+        <span id="hud-avatar"></span>
+        <span class="hud-name"><b id="hud-name"></b><small id="hud-lvlname"></small></span>
+      </button>
+      <span class="lvl-chip" id="hud-lvl">1-daraja</span>
+      <div class="hud-bar-wrap" id="hud-bar-wrap">
+        <div class="bar" id="hud-bar" role="progressbar" aria-label="Tajriba ballari" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="hud-fill"></i></div>
+        <span class="xp-text" id="hud-xp">0 / 100 XP</span>
+      </div>
+    </header>
+    <main id="main">
+      <section class="view" id="view-world" data-view="world" hidden></section>
+      <section class="view" id="view-discover" data-view="discover" hidden></section>
+      <section class="view" id="view-quests" data-view="quests" hidden></section>
+      <section class="view" id="view-inventory" data-view="inventory" hidden></section>
+      <section class="view" id="view-level" data-view="level" hidden></section>
+      <section class="view" id="view-profile" data-view="profile" hidden></section>
+    </main>
+  </div>
+  <nav class="bottomnav" id="bottom-nav" aria-label="Pastki menyu"></nav>
+</div>
+
+<div id="toasts" aria-live="polite" aria-atomic="false"></div>
+
+<div id="modal" class="modal-wrap" hidden>
+  <div class="modal panel" id="modal-box" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1">
+    <div class="modal-head"><h2 id="modal-title"></h2><button class="icon-btn" id="modal-x" type="button" aria-label="Yopish"></button></div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-actions" id="modal-actions"></div>
+  </div>
+</div>
+
+<div id="celebrate" hidden>
+  <div class="fx" id="celebrate-fx" aria-hidden="true"></div>
+  <div class="cel-box panel" id="celebrate-box" role="dialog" aria-modal="true" aria-live="assertive"></div>
+</div>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#38d6ff"/><stop offset="1" stop-color="#9a6bff"/></linearGradient>
+  </defs>
+</svg>
+
+<script>
+(function(){
+'use strict';
+
+/* =========================================================
+   1. CONFIG — shu yerda qiymatlarni osongina o‘zgartirish mumkin
+   ========================================================= */
+var CONFIG = {
+  storageKey: 'taiman_parallel_v1',
+  schema: 1,
+  devTools: false,                 // true qilinsa (yoki ?dev=1) sozlamalarda sinov tugmalari chiqadi
+  // Namunaviy XP qiymatlari
+  xp: { firstEntry: 50, daily: 30, region: 75, special: 100 },
+  // Buyumlardan olinadigan XP (bir martalik, buyum sarflanadi)
+  itemXp: { xpcrystal: 25 },
+  // Daraja chegaralari va mukofotlari (items: buyum identifikatori -> miqdor)
+  levels: [
+    { level: 1, name: 'Uyg‘onish', xp: 0,
+      summary: 'Olam bilan tanishasan, profilingni yaratasan va dastlabki topshiriqlarni bajarasan.',
+      perks: ['Olamim, Topshiriqlar va Inventar bo‘limlari', 'Boshlang‘ich orol', 'Boshlang‘ich buyumlar'],
+      reward: {} },
+    { level: 2, name: 'Rivojlanish', xp: 100,
+      summary: 'Yangi obyektlar, bezaklar va hududlar ochila boshlaydi.',
+      perks: ['Yorug‘lik vodiysi va Unutilgan xarobalar hududlari', 'Olam bezaklari', 'Yangi topshiriqlar'],
+      reward: { crystal: 2 } },
+    { level: 3, name: 'Aloqa', xp: 300,
+      summary: 'Boshqa foydalanuvchilar bilan o‘zaro aloqa uchun mo‘ljallangan imkoniyatlar haqida ma’lumot.',
+      perks: ['Yulduzlar darvozasi va Sukunat hududi', 'Olam kartochkasi (olamingning matnli ko‘rinishi)', 'Kelajakdagi aloqa imkoniyatlari haqida ma’lumot'],
+      reward: { key: 1, crystal: 2 },
+      note: 'Muhim: hozirgi prototipda server yo‘q, shuning uchun boshqa odamlar bilan real aloqa mavjud emas. Bu daraja kelajakdagi imkoniyatlarni oldindan ko‘rsatadi.' },
+    { level: 4, name: 'Parallel olamlar', xp: 600, special: true,
+      summary: 'Eng maxsus daraja: sirli portal ochiladi va parallel olamlar sari yo‘l boshlanadi.',
+      perks: ['Parallel olamlar hududi', 'Faol (ochiq) portal', 'Kelajakdagi parallel olamlar uchun tayyor joy'],
+      reward: { key: 2, shard: 1 } }
+  ]
+};
+var DEV = CONFIG.devTools || /[?&]dev=1/.test(location.search);
+
+/* =========================================================
+   2. MA’LUMOTLAR: buyumlar, hududlar, topshiriqlar, avatarlar
+   ========================================================= */
+var ITEMS = {
+  crystal:   { name: 'Energiya kristali', cat: 'crystals',  color: '#3de0ff', icon: 'crystal', action: 'Hududlarga o‘tish',
+               desc: 'Olam energiyasining sof ko‘rinishi. Yangi hududlarni ochishda sarflanadi.' },
+  xpcrystal: { name: 'Tajriba kristali',  cat: 'crystals',  color: '#9a6bff', icon: 'crystal', action: 'Ishlatish',
+               desc: 'Ishlatilganda darhol tajriba (XP) beradi. Bir martalik.' },
+  key:       { name: 'Portal kaliti',     cat: 'keys',      color: '#ffcf5a', icon: 'key', action: 'Ishlatish',
+               desc: 'Yulduzlar darvozasini ochadi. Darvoza 3-darajada ochiladi.' },
+  compass:   { name: 'Qadimiy kompas',    cat: 'artifacts', color: '#47e3a6', icon: 'artifact', action: 'Ishlatish',
+               desc: 'Olamda yashiringan yulduz yo‘nalishini ko‘rsatadi.' },
+  decor:     { name: 'Yulduz chiroqlari', cat: 'decor',     color: '#ff9ad5', icon: 'decor', action: 'Qo‘yish',
+               desc: 'Olamingni nurli chiroqlar bilan bezaydi. Istagan payt olib qo‘yish mumkin.' },
+  shard:     { name: 'Yulduz bo‘lagi',    cat: 'rare',      color: '#cfe0ff', icon: 'spark', action: '',
+               desc: 'Noyob topilma: sirli yulduzdan qolgan yorug‘ parcha. Kolleksiya uchun.' },
+  echo:      { name: 'Sukunat aks-sadosi',cat: 'rare',      color: '#8fa2ff', icon: 'spark', action: '',
+               desc: 'Noyob topilma: Sukunat hududida eshitilgan yagona tovush. Kolleksiya uchun.' }
+};
+var CATS = [['all','Barchasi'],['crystals','Kristallar'],['keys','Portal kalitlari'],['artifacts','Artefaktlar'],['decor','Bezaklar'],['rare','Noyob topilmalar']];
+
+var REGIONS = [
+  { id: 'island', name: 'Boshlang‘ich orol', level: 1, cost: {}, reward: {},
+    desc: 'Sayohating boshlanadigan tinch va yorug‘ orol. Bu yerda olaming asta-sekin shakllanadi.',
+    lore: 'Orol markazidagi kichik kulba — sening birinchi bekating. Shamolda yengil kristall tovushlari eshitiladi: olam seni qabul qilmoqda.' },
+  { id: 'valley', name: 'Yorug‘lik vodiysi', level: 2, cost: { crystal: 2 }, reward: { crystal: 1 },
+    desc: 'Nurga to‘la vodiy: daraxtlari o‘z-o‘zidan yonadi, soyalar esa sekin raqsga tushadi.',
+    lore: 'Vodiyning har bir daraxti kimningdir xotirasidan o‘sgan. Ularning nuri yo‘lingni yoritadi va yangi yo‘llarni ko‘rsatadi.' },
+  { id: 'ruins', name: 'Unutilgan xarobalar', level: 2, cost: { crystal: 3 }, reward: { shard: 1 },
+    flag: { key: 'objectFound', text: 'Olamda yashiringan yulduzni top' },
+    desc: 'Qadimiy ustunlar va yarim buzilgan darvozalar. Ular hali ham sirli ovozlarni saqlab turibdi.',
+    lore: 'Xarobalar orasidagi har bir parcha olamning birinchi tarixidan nishona. Eng chuqur toshning tagida yulduz bo‘lagi yashiringan edi.' },
+  { id: 'gate', name: 'Yulduzlar darvozasi', level: 3, cost: { key: 1 }, reward: { crystal: 2 },
+    desc: 'Osmonda suzib yuruvchi qadimiy darvoza. Uning narigi tomoni keyingi bosqich yo‘lini ko‘rsatadi.',
+    lore: 'Darvoza yulduzlar harakatiga qarab ochiladi. Uning ostida turgan odam o‘z olamining tashqarisini birinchi marta ko‘radi.' },
+  { id: 'silence', name: 'Sukunat hududi', level: 3, cost: { crystal: 4 }, reward: { echo: 1 },
+    desc: 'Hamma tovush so‘nadigan sirli hudud. Faqat o‘z fikringni eshitasan.',
+    lore: 'Sukunat hududida vaqt sekinlashadi. Tosh ustunlar atrofidagi tuman ichida eng uzoq aks-sado ham o‘z javobini topadi.' },
+  { id: 'parallel', name: 'Parallel olamlar', level: 4, cost: {}, reward: { shard: 1 }, auto: true,
+    desc: 'Eng maxsus hudud: portal ortida yashiringan boshqa olamlar. Hozircha ular prototip ichidagi ko‘rinish; haqiqiy o‘zaro bog‘lanish keyingi bosqichda — server qo‘shilganda ishga tushadi.',
+    lore: 'Portal ortida son-sanoqsiz yorug‘ yo‘llar ko‘rinadi. Har biri kimningdir olamiga ketadi — kelajakda ular sening olaming bilan bog‘lanadi.' }
+];
+
+var QUESTS = [
+  { id: 'enter', title: 'Olaming bilan tanish', desc: 'Olamga birinchi marta kir va tanishtiruvni tugat.', xp: CONFIG.xp.firstEntry, go: 'world',
+    hint: 'Bu topshiriq tanishtiruvni tugatgach avtomatik bajariladi.',
+    steps: [{ t: 'Tanishtiruvni tugat', ok: function(s){ return !!s.flags.introDone; } }] },
+  { id: 'profile', title: 'Profilingni yarat', desc: 'Profil bo‘limida o‘zingga mos avatar tanla yoki nomingni saqla.', xp: 40, items: { crystal: 1 }, go: 'profile',
+    hint: 'Profil bo‘limida avatarni tanlang yoki nomni saqlang.',
+    steps: [{ t: 'Profilda avatar tanla yoki nomni saqla', ok: function(s){ return !!s.flags.avatarSaved; } }] },
+  { id: 'portal', title: 'Portal haqida ma’lumot ol', desc: 'Olamim sahifasidagi sirli portalni bos va uning sirini o‘qi.', xp: 40, items: { key: 1 }, go: 'world',
+    hint: 'Olamim sahifasida portalni bosing.',
+    steps: [{ t: 'Portalni bos va ma’lumotni o‘qi', ok: function(s){ return !!s.flags.portalViewed; } }] },
+  { id: 'region', title: 'Birinchi hududingni o‘rgan', desc: 'Kashfiyotlar sahifasida Boshlang‘ich orolni o‘rgan.', xp: CONFIG.xp.region, items: { crystal: 2 }, go: 'discover',
+    hint: 'Kashfiyotlar sahifasida “Boshlang‘ich orol” kartasini oching va “Hududni o‘rganish” tugmasini bosing.',
+    steps: [{ t: 'Boshlang‘ich orolni o‘rgan', ok: function(s){ return !!s.regions.island.explored; } }] },
+  { id: 'object', title: 'Yangi obyektni top', desc: 'Olamda yashiringan miltillovchi yulduzni top.', xp: 60, items: { shard: 1 }, go: 'world',
+    hint: 'Olamim sahifasida kichik miltillovchi yulduzni qidiring. Qadimiy kompas yordam beradi.',
+    steps: [{ t: 'Yashirin yulduzni top', ok: function(s){ return !!s.flags.objectFound; } }] },
+  { id: 'daily', title: 'Kundalik topshiriq', desc: 'Har kuni olam energiyasini yig‘ib, mukofot ol. Har kuni yangilanadi.', xp: CONFIG.xp.daily, items: { crystal: 1 }, go: 'world', daily: true,
+    hint: 'Olamim sahifasida “Kundalik energiyani yig‘ish” tugmasini bosing.',
+    steps: [{ t: 'Bugungi energiyani yig‘', ok: function(s){ return s.daily.collected === todayKey(); } }] },
+  { id: 'prepare', title: 'Maxsus kashfiyotga tayyorlan', desc: 'Yorug‘lik vodiysini och va inventardan biror buyumni ishlat.', xp: CONFIG.xp.special, go: 'discover',
+    hint: 'Vodiyni ochish uchun 2-daraja va 2 ta kristall kerak. Keyin Inventarda buyum ishlating.',
+    steps: [{ t: 'Yorug‘lik vodiysini och', ok: function(s){ return !!s.regions.valley.unlocked; } },
+            { t: 'Inventardan biror buyumni ishlat', ok: function(s){ return !!s.flags.itemUsed; } }] },
+  { id: 'valley', title: 'Vodiy nurini kashf et', desc: 'Yorug‘lik vodiysini o‘rgan.', xp: 80, items: { crystal: 1 }, go: 'discover',
+    hint: 'Avval vodiyni oching, keyin uni o‘rganing.',
+    steps: [{ t: 'Yorug‘lik vodiysini o‘rgan', ok: function(s){ return !!s.regions.valley.explored; } }] },
+  { id: 'ruins', title: 'Xarobalar sirini och', desc: 'Unutilgan xarobalarni o‘rgan.', xp: 100, items: { crystal: 1 }, go: 'discover',
+    hint: 'Xarobalarni ochish uchun yashirin yulduzni toping va 3 ta kristall to‘plang.',
+    steps: [{ t: 'Unutilgan xarobalarni o‘rgan', ok: function(s){ return !!s.regions.ruins.explored; } }] },
+  { id: 'silence', title: 'Sukunatni tingla', desc: 'Sukunat hududini o‘rgan.', xp: 90, items: { echo: 1 }, go: 'discover',
+    hint: 'Sukunat hududi 3-darajada ochiladi.',
+    steps: [{ t: 'Sukunat hududini o‘rgan', ok: function(s){ return !!s.regions.silence.explored; } }] },
+  { id: 'gate', title: 'Yulduzlar darvozasiga yet', desc: 'Yulduzlar darvozasini och va o‘rgan.', xp: 120, items: { key: 1 }, go: 'discover',
+    hint: 'Darvoza 3-darajada Portal kaliti bilan ochiladi.',
+    steps: [{ t: 'Yulduzlar darvozasini o‘rgan', ok: function(s){ return !!s.regions.gate.explored; } }] }
+];
+
+var AVATARS = [
+  { id: 'nova',   name: 'Yulduz',   c1: '#3de0ff', c2: '#4d7cff', shape: 'star' },
+  { id: 'ember',  name: 'Alanga',   c1: '#ff9a5a', c2: '#ff4d8a', shape: 'tri' },
+  { id: 'aurora', name: 'Shafaq',   c1: '#47e3a6', c2: '#3de0ff', shape: 'ring' },
+  { id: 'orchid', name: 'Binafsha', c1: '#c08bff', c2: '#6a5bff', shape: 'diamond' },
+  { id: 'lumen',  name: 'Nur',      c1: '#ffe27a', c2: '#ff9a5a', shape: 'sun' },
+  { id: 'tide',   name: 'To‘lqin',  c1: '#4d7cff', c2: '#2d2bb8', shape: 'wave' },
+  { id: 'shade',  name: 'Soya',     c1: '#8a94c8', c2: '#2a3170', shape: 'moon' },
+  { id: 'volt',   name: 'Chaqmoq',  c1: '#b6ff5a', c2: '#18c7a0', shape: 'bolt' }
+];
+var SHAPES = {
+  star: '<path d="M12 3l2.4 5.6 6 .6-4.6 4 1.4 6L12 16l-5.2 3.2 1.4-6-4.6-4 6-.6z"/>',
+  tri: '<path d="M12 4l8 14H4z"/>',
+  ring: '<circle cx="12" cy="12" r="6.5" fill="none" stroke="#fff" stroke-width="3"/>',
+  diamond: '<path d="M12 3l7 9-7 9-7-9z"/>',
+  sun: '<circle cx="12" cy="12" r="4.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2" stroke="#fff" stroke-width="2" stroke-linecap="round"/>',
+  wave: '<path d="M3 13c3-5 6-5 9 0s6 5 9 0" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/>',
+  moon: '<path d="M16 3a9 9 0 1 0 5 12A7 7 0 0 1 16 3z"/>',
+  bolt: '<path d="M13 2L5 13h6l-1 9 8-11h-6z"/>'
+};
+
+var ICONS = {
+  world: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3.2 3 3.2 15 0 18M12 3c-3.2 3-3.2 15 0 18"/>',
+  discover: '<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/>',
+  quests: '<rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 12l2.2 2.2L15.5 10"/>',
+  inventory: '<path d="M6 8h12l1 12H5z"/><path d="M9 8a3 3 0 0 1 6 0"/>',
+  level: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>',
+  profile: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/>',
+  lock: '<rect x="5" y="11" width="14" height="10" rx="3"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  crystal: '<path d="M12 3l7 6-7 12L5 9z"/><path d="M5 9h14M9 9l3 12 3-12"/>',
+  key: '<circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M21 12v2"/>',
+  artifact: '<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><circle cx="12" cy="12" r="2.5"/>',
+  decor: '<path d="M9 3h6M12 3v3"/><rect x="7" y="6" width="10" height="13" rx="4"/><path d="M10 22h4"/>',
+  spark: '<path d="M12 3v6M12 15v6M3 12h6M15 12h6"/><circle cx="12" cy="12" r="2"/>',
+  bolt: '<path d="M13 2L5 13h6l-1 9 8-11h-6z"/>',
+  users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.3-5 6.5-5s5.7 1.5 6.5 5M16 5a3.5 3.5 0 0 1 0 6.5M18 15c2 .5 3.2 2 3.5 5"/>',
+  portal: '<path d="M6 21V10a6 7 0 0 1 12 0v11"/><ellipse cx="12" cy="13" rx="3" ry="5"/>',
+  gift: '<rect x="4" y="9" width="16" height="11" rx="2"/><path d="M12 9v11M4 13h16M12 9c-2-4-6-3-5 0M12 9c2-4 6-3 5 0"/>'
+};
+
+/* =========================================================
+   3. YORDAMCHI FUNKSIYALAR (xavfsiz DOM)
+   ========================================================= */
+function $(s, r){ return (r || document).querySelector(s); }
+function $$(s, r){ return Array.prototype.slice.call((r || document).querySelectorAll(s)); }
+function clear(el){ while(el.firstChild) el.removeChild(el.firstChild); return el; }
+function append(el, c){
+  if(c === null || c === undefined || c === false) return;
+  if(Array.isArray(c)){ c.forEach(function(x){ append(el, x); }); }
+  else if(c.nodeType){ el.appendChild(c); }
+  else { el.appendChild(document.createTextNode(String(c))); }
+}
+// h(tag, props, ...children) — matn faqat textContent / createTextNode orqali qo‘shiladi
+function h(tag, props){
+  var el = document.createElement(tag);
+  if(props){
+    Object.keys(props).forEach(function(k){
+      var v = props[k];
+      if(v === null || v === undefined || v === false) return;
+      if(k === 'class') el.className = v;
+      else if(k === 'text') el.textContent = v;
+      else if(k === 'value') el.value = v;
+      else if(k === 'fk') el.setAttribute('data-fk', v);
+      else if(k.slice(0, 2) === 'on' && typeof v === 'function') el.addEventListener(k.slice(2).toLowerCase(), v);
+      else el.setAttribute(k, v === true ? '' : String(v));
+    });
+  }
+  for(var i = 2; i < arguments.length; i++) append(el, arguments[i]);
+  return el;
+}
+// Faqat ICONS (ichki, o‘zgarmas konstantalar) dan SVG yasaydi
+function icon(name, size){
+  var s = document.createElement('span');
+  s.className = 'ico';
+  s.setAttribute('aria-hidden', 'true');
+  var n = size || 22;
+  s.innerHTML = '<svg viewBox="0 0 24 24" width="' + n + '" height="' + n + '" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + (ICONS[name] || '') + '</svg>';
+  return s;
+}
+function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+function fmtNum(n){ return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
+function mulberry32(a){ return function(){ a |= 0; a = a + 0x6D2B79F5 | 0; var t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function cleanName(v){
+  return String(v || '').replace(/[\u0000-\u001f\u007f<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 20);
+}
+function pad2(n){ return n < 10 ? '0' + n : String(n); }
+function todayKey(){ var d = new Date(); return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+function fmtDate(iso){
+  var d = new Date(iso);
+  if(isNaN(d.getTime())) return '—';
+  return pad2(d.getDate()) + '.' + pad2(d.getMonth() + 1) + '.' + d.getFullYear();
+}
+function itemsText(obj){
+  return Object.keys(obj || {}).map(function(k){ return obj[k] + ' × ' + ITEMS[k].name; }).join(', ');
+}
+function avatarDef(id){ for(var i = 0; i < AVATARS.length; i++) if(AVATARS[i].id === id) return AVATARS[i]; return AVATARS[0]; }
+function avatarEl(id, size){
+  var a = avatarDef(id), s = size || 48;
+  var el = h('span', { class: 'avatar', role: 'img', 'aria-label': 'Avatar: ' + a.name });
+  el.style.width = el.style.height = s + 'px';
+  el.style.background = 'linear-gradient(135deg,' + a.c1 + ',' + a.c2 + ')';
+  var g = Math.round(s * 0.56);
+  el.innerHTML = '<svg viewBox="0 0 24 24" width="' + g + '" height="' + g + '" fill="#fff" stroke="none">' + SHAPES[a.shape] + '</svg>';
+  return el;
+}
+function logoMark(size){
+  var s = document.createElement('span');
+  s.className = 'ico';
+  s.setAttribute('aria-hidden', 'true');
+  s.innerHTML = '<svg viewBox="0 0 48 48" width="' + size + '" height="' + size + '" fill="none"><defs><linearGradient id="lg' + size + '" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3de0ff"/><stop offset="1" stop-color="#9a6bff"/></linearGradient></defs><path d="M24 3l18 10.5v21L24 45 6 34.5v-21z" stroke="url(#lg' + size + ')" stroke-width="2.5"/><path d="M15 17h18M24 17v16" stroke="#fff" stroke-width="3.4" stroke-linecap="round"/><circle cx="24" cy="24" r="14" stroke="url(#lg' + size + ')" stroke-opacity=".4" stroke-dasharray="3 5"/></svg>';
+  return s;
+}
+
+/* =========================================================
+   4. HOLAT VA SAQLASH (localStorage)
+   ========================================================= */
+var state = null;
+var memStore = null;       // localStorage ishlamasa, vaqtinchalik xotira
+var storageOk = true;
+var storageWarned = false;
+
+function defaultState(){
+  var regions = {};
+  REGIONS.forEach(function(r){ regions[r.id] = { unlocked: r.id === 'island', explored: false }; });
+  return {
+    schema: CONFIG.schema, name: '', avatar: AVATARS[0].id, createdAt: null, introDone: false,
+    xp: 0, level: 1, quests: {}, inventory: { crystal: 5, xpcrystal: 2, key: 1, compass: 1, decor: 1 },
+    regions: regions, flags: {}, daily: { collected: '', claimed: '' }, stats: { completed: 0 },
+    settings: { animations: null, particles: true, haptics: true }, lastView: 'world'
+  };
+}
+var FLAG_KEYS = ['introDone', 'avatarSaved', 'portalViewed', 'objectFound', 'itemUsed', 'decorOn', 'compassOn'];
+var VIEWS = ['world', 'discover', 'quests', 'inventory', 'level', 'profile'];
+
+// Saqlangan ma’lumotni tekshirib, xavfsiz holatga keltiradi
+function sanitize(raw){
+  var d = defaultState();
+  if(!raw || typeof raw !== 'object') return d;
+  function num(v, def){ v = Number(v); return isFinite(v) && v >= 0 ? Math.floor(v) : def; }
+  d.name = cleanName(raw.name);
+  d.avatar = AVATARS.some(function(a){ return a.id === raw.avatar; }) ? raw.avatar : d.avatar;
+  d.createdAt = typeof raw.createdAt === 'string' && !isNaN(new Date(raw.createdAt).getTime()) ? raw.createdAt : null;
+  d.introDone = raw.introDone === true && d.name.length >= 2;
+  d.xp = num(raw.xp, 0);
+  d.level = levelForXP(d.xp);
+  if(raw.inventory && typeof raw.inventory === 'object'){
+    d.inventory = {};
+    Object.keys(ITEMS).forEach(function(k){ d.inventory[k] = num(raw.inventory[k], 0); });
+  }
+  if(raw.quests && typeof raw.quests === 'object'){
+    QUESTS.forEach(function(q){ if(!q.daily && raw.quests[q.id]) d.quests[q.id] = { at: num(raw.quests[q.id].at, 0) }; });
+  }
+  if(raw.regions && typeof raw.regions === 'object'){
+    REGIONS.forEach(function(r){
+      var s = raw.regions[r.id];
+      if(s && typeof s === 'object'){ d.regions[r.id] = { unlocked: r.id === 'island' ? true : s.unlocked === true, explored: s.explored === true && (s.unlocked === true || r.id === 'island') }; }
+    });
+  }
+  if(raw.flags && typeof raw.flags === 'object'){ FLAG_KEYS.forEach(function(k){ if(raw.flags[k] === true) d.flags[k] = true; }); }
+  if(raw.daily && typeof raw.daily === 'object'){
+    var re = /^\d{4}-\d{2}-\d{2}$/;
+    d.daily.collected = re.test(raw.daily.collected) ? raw.daily.collected : '';
+    d.daily.claimed = re.test(raw.daily.claimed) ? raw.daily.claimed : '';
+  }
+  if(raw.stats) d.stats.completed = num(raw.stats.completed, 0);
+  if(raw.settings && typeof raw.settings === 'object'){
+    d.settings.animations = typeof raw.settings.animations === 'boolean' ? raw.settings.animations : null;
+    d.settings.particles = raw.settings.particles !== false;
+    d.settings.haptics = raw.settings.haptics !== false;
+  }
+  d.lastView = VIEWS.indexOf(raw.lastView) > -1 ? raw.lastView : 'world';
+  if(d.level >= 4) d.regions.parallel.unlocked = true;
+  return d;
+}
+function readStore(){
+  try { var t = window.localStorage.getItem(CONFIG.storageKey); return t; }
+  catch(e){ storageOk = false; return memStore; }
+}
+function loadState(){
+  var txt = readStore();
+  if(!txt) return defaultState();
+  try { return sanitize(JSON.parse(txt)); } catch(e){ return defaultState(); }
+}
+function saveState(){
+  var txt = JSON.stringify(state);
+  try { window.localStorage.setItem(CONFIG.storageKey, txt); storageOk = true; }
+  catch(e){
+    storageOk = false; memStore = txt;
+    if(!storageWarned){ storageWarned = true; toast('Brauzer xotirasi mavjud emas: progress faqat shu sessiyada saqlanadi.', 'warn'); }
+  }
+}
+function clearStore(){
+  memStore = null;
+  try { window.localStorage.removeItem(CONFIG.storageKey); } catch(e){}
+}
+
+/* =========================================================
+   5. O‘YIN MANTIG‘I
+   ========================================================= */
+function levelForXP(xp){
+  var lv = 1;
+  CONFIG.levels.forEach(function(L){ if(xp >= L.xp) lv = L.level; });
+  return lv;
+}
+function motionOn(){ return state && state.settings.animations !== false; }
+
+function grantItems(obj){
+  Object.keys(obj || {}).forEach(function(k){ state.inventory[k] = (state.inventory[k] || 0) + obj[k]; });
+}
+function addXP(n){
+  if(!(n > 0)) return;
+  state.xp += n;
+  floatXP(n);
+  var target = levelForXP(state.xp);
+  while(state.level < target){
+    state.level++;
+    var L = CONFIG.levels[state.level - 1];
+    grantItems(L.reward);
+    if(state.level >= 4) state.regions.parallel.unlocked = true;
+    celebQueue.push({ level: state.level });
+  }
+}
+
+function isClaimed(q){ return q.daily ? state.daily.claimed === todayKey() : !!state.quests[q.id]; }
+function questStatus(q){
+  if(isClaimed(q)) return 'claimed';
+  return q.steps.every(function(st){ return st.ok(state); }) ? 'ready' : 'todo';
+}
+function readyQuestIds(){ return QUESTS.filter(function(q){ return questStatus(q) === 'ready'; }).map(function(q){ return q.id; }); }
+
+function claimQuest(id){
+  var q = QUESTS.filter(function(x){ return x.id === id; })[0];
+  if(!q || questStatus(q) !== 'ready') return;               // shartlar bajarilmagan yoki allaqachon olingan
+  if(q.daily) state.daily.claimed = todayKey(); else state.quests[q.id] = { at: Date.now() };
+  state.stats.completed++;
+  grantItems(q.items);
+  addXP(q.xp);
+  var extra = q.items ? ', ' + itemsText(q.items) : '';
+  toast('+' + q.xp + ' XP' + extra + ' — ' + q.title, 'xp');
+  haptic('success');
+  commit();
+}
+
+function regionDef(id){ return REGIONS.filter(function(r){ return r.id === id; })[0]; }
+function regionReqs(r){
+  var reqs = [];
+  if(r.level > 1) reqs.push({ ok: state.level >= r.level, text: r.level + '-daraja kerak (hozir: ' + state.level + '-daraja)' });
+  Object.keys(r.cost).forEach(function(k){
+    var have = state.inventory[k] || 0;
+    reqs.push({ ok: have >= r.cost[k], text: r.cost[k] + ' × ' + ITEMS[k].name + ' (sende: ' + have + ')' });
+  });
+  if(r.flag) reqs.push({ ok: !!state.flags[r.flag.key], text: r.flag.text });
+  return reqs;
+}
+function unlockRegion(id){
+  var r = regionDef(id), st = state.regions[id];
+  if(!r || st.unlocked || r.auto) return false;
+  var reqs = regionReqs(r);
+  if(!reqs.every(function(q){ return q.ok; })) return false;
+  Object.keys(r.cost).forEach(function(k){ state.inventory[k] -= r.cost[k]; });
+  st.unlocked = true;
+  toast('Yangi hudud ochildi: ' + r.name, 'success');
+  haptic('success');
+  commit();
+  return true;
+}
+function exploreRegion(id){
+  var r = regionDef(id), st = state.regions[id];
+  if(!r || !st.unlocked || st.explored) return null;
+  st.explored = true;
+  grantItems(r.reward);
+  var txt = itemsText(r.reward);
+  toast('Hudud o‘rganildi: ' + r.name + (txt ? ' · +' + txt : ''), 'success');
+  commit();
+  return txt;
+}
+function useItem(id){
+  var def = ITEMS[id];
+  if(!def || !(state.inventory[id] > 0)) return;
+  if(id === 'xpcrystal'){
+    state.inventory.xpcrystal--;
+    state.flags.itemUsed = true;
+    addXP(CONFIG.itemXp.xpcrystal);
+    toast('Tajriba kristali ishlatildi: +' + CONFIG.itemXp.xpcrystal + ' XP', 'xp');
+    commit();
+  } else if(id === 'key'){
+    var g = regionDef('gate');
+    if(state.regions.gate.unlocked){ toast('Yulduzlar darvozasi allaqachon ochiq.', 'info'); return; }
+    var bad = regionReqs(g).filter(function(q){ return !q.ok; });
+    if(bad.length){ toast('Darvozani hozircha ochib bo‘lmaydi: ' + bad[0].text, 'warn'); return; }
+    state.flags.itemUsed = true;
+    unlockRegion('gate');
+  } else if(id === 'decor'){
+    state.flags.decorOn = !state.flags.decorOn;
+    state.flags.itemUsed = true;
+    toast(state.flags.decorOn ? 'Chiroqlar olamga qo‘yildi.' : 'Chiroqlar olib qo‘yildi.', 'success');
+    commit();
+  } else if(id === 'compass'){
+    if(state.flags.objectFound){ toast('Yashirin yulduz allaqachon topilgan.', 'info'); return; }
+    if(state.flags.compassOn){ toast('Kompas allaqachon faol: Olamim sahifasida yulduz atrofiga qarang.', 'info'); return; }
+    state.inventory.compass--;
+    state.flags.compassOn = true;
+    state.flags.itemUsed = true;
+    toast('Kompas yo‘nalishni ko‘rsatdi. Olamim sahifasida yulduz atrofida halqa paydo bo‘ldi.', 'success');
+    commit();
+  } else if(id === 'crystal'){
+    navigate('discover');
+  }
+}
+function findStar(){
+  if(state.flags.objectFound){ toast('Bu yulduz allaqachon topilgan.', 'info'); return; }
+  state.flags.objectFound = true;
+  grantItems({ crystal: 3 });
+  haptic('success');
+  commit();
+  openModal({
+    title: 'Sirli yulduz topildi!',
+    body: [
+      h('p', { text: 'Sen olamning yashirin burchagidan miltillovchi yulduzni topding. U sening qo‘lingda erib, 3 ta energiya kristaliga aylandi.' }),
+      h('div', { class: 'reward-row' }, h('span', { class: 'chip item', text: '+3 Energiya kristali' })),
+      h('p', { text: 'Endi “Yangi obyektni top” topshirig‘i uchun mukofot olish mumkin. Unutilgan xarobalar yo‘li ham ochilmoqda.' })
+    ],
+    actions: [{ label: 'Topshiriqlarga o‘tish', kind: 'primary', onClick: function(){ navigate('quests'); } }, { label: 'Yopish', kind: 'ghost' }]
+  });
+}
+function collectDaily(){
+  if(state.daily.collected === todayKey()){ toast('Bugungi energiya allaqachon yig‘ilgan. Ertaga qaytib keling.', 'info'); return; }
+  state.daily.collected = todayKey();
+  toast('Kundalik energiya yig‘ildi! Topshiriqlarda mukofotni oling.', 'success');
+  commit();
+}
+
+// Holat o‘zgarganda: saqlash, yangi tayyor topshiriqlar haqida xabar, qayta chizish
+var lastReady = {};
+function commit(){
+  saveState();
+  var ready = readyQuestIds(), fresh = ready.filter(function(id){ return !lastReady[id]; });
+  lastReady = {};
+  ready.forEach(function(id){ lastReady[id] = true; });
+  fresh.forEach(function(id){
+    var q = QUESTS.filter(function(x){ return x.id === id; })[0];
+    toast('Topshiriq bajarildi: “' + q.title + '”. Mukofotni oling!', 'success');
+  });
+  renderAll();
+  flushCelebrations();
+}
+
+/* =========================================================
+   6. UI: toast, modal, bayram, HUD, navigatsiya
+   ========================================================= */
+function toast(msg, type){
+  var box = $('#toasts');
+  var t = h('div', { class: 'toast ' + (type || 'info'), role: 'status' }, h('span', { class: 't-dot' }), h('span', { class: 't-msg', text: msg }));
+  box.appendChild(t);
+  while(box.children.length > 3) box.removeChild(box.firstChild);
+  requestAnimationFrame(function(){ requestAnimationFrame(function(){ t.classList.add('in'); }); });
+  var gone = false;
+  function kill(){ if(gone) return; gone = true; t.classList.remove('in'); setTimeout(function(){ if(t.parentNode) t.parentNode.removeChild(t); }, motionOn() ? 280 : 0); }
+  t.addEventListener('click', kill);
+  setTimeout(kill, 4200);
+}
+function floatXP(n){
+  if(!state || !motionOn() || $('#app').hidden) return;
+  var wrap = $('#hud-bar-wrap');
+  var f = h('span', { class: 'xp-float', text: '+' + n + ' XP', 'aria-hidden': 'true' });
+  wrap.appendChild(f);
+  setTimeout(function(){ if(f.parentNode) f.parentNode.removeChild(f); }, 1500);
+}
+function haptic(kind){
+  try {
+    if(state && state.settings.haptics && TG.wa && TG.wa.HapticFeedback) TG.wa.HapticFeedback.notificationOccurred(kind === 'error' ? 'error' : 'success');
+  } catch(e){}
+}
+
+/* ---- Modal ---- */
+var modalEl, modalBox, modalLastFocus = null, modalCloseTimer = 0, modalOnClose = null;
+function modalOpen(){ return modalEl && !modalEl.hidden; }
+function focusables(root){
+  return $$('a[href],button:not([disabled]),input:not([disabled]),[tabindex]:not([tabindex="-1"])', root).filter(function(e){ return e.offsetParent !== null || e === document.activeElement; });
+}
+function openModal(opts){
+  clearTimeout(modalCloseTimer);
+  modalOnClose = opts.onClose || null;
+  $('#modal-title').textContent = opts.title || '';
+  var body = clear($('#modal-body')); append(body, opts.body);
+  var acts = clear($('#modal-actions'));
+  (opts.actions || []).forEach(function(a){
+    acts.appendChild(h('button', {
+      class: 'btn' + (a.kind === 'primary' ? ' btn-primary' : a.kind === 'danger' ? ' btn-danger' : ' btn-ghost'),
+      type: 'button', disabled: a.disabled, fk: a.fk,
+      onClick: function(){ if(!a.keep) closeModal(); if(a.onClick) a.onClick(); }
+    }, a.label));
+  });
+  if(modalEl.hidden){
+    modalLastFocus = document.activeElement;
+    modalEl.hidden = false;
+    requestAnimationFrame(function(){ requestAnimationFrame(function(){ modalEl.classList.add('open'); }); });
+  }
+  modalBox.scrollTop = 0;
+  var first = acts.querySelector('.btn-primary:not([disabled])') || acts.querySelector('.btn:not([disabled])');
+  (first || modalBox).focus({ preventScroll: true });
+}
+function closeModal(){
+  if(!modalOpen()) return;
+  modalEl.classList.remove('open');
+  var cb = modalOnClose; modalOnClose = null;
+  var done = function(){
+    modalEl.hidden = true;
+    clear($('#modal-body')); clear($('#modal-actions'));
+    if(modalLastFocus && document.body.contains(modalLastFocus)) { try { modalLastFocus.focus({ preventScroll: true }); } catch(e){} }
+    modalLastFocus = null;
+  };
+  if(motionOn()) modalCloseTimer = setTimeout(done, 230); else done();
+  if(cb) cb();
+}
+function confirmDialog(o){
+  return new Promise(function(resolve){
+    var settled = false;
+    function fin(v){ if(!settled){ settled = true; resolve(v); } }
+    openModal({
+      title: o.title, body: [h('p', { text: o.text })],
+      onClose: function(){ fin(false); },
+      actions: [
+        { label: o.cancelText || 'Bekor qilish', kind: 'ghost', onClick: function(){ fin(false); } },
+        { label: o.confirmText || 'Tasdiqlash', kind: o.danger ? 'danger' : 'primary', onClick: function(){ fin(true); } }
+      ]
+    });
+  });
+}
+
+/* ---- Bayram oynasi (daraja oshishi / portal ochilishi) ---- */
+var celebQueue = [], celebOpen = false, celebLastFocus = null, celebCurrent = null;
+function flushCelebrations(){
+  if(celebOpen || !celebQueue.length || $('#app').hidden) return;
+  celebOpen = true;
+  var c = celebQueue.shift();
+  setTimeout(function(){ showCelebration(c); }, motionOn() ? 650 : 0);
+}
+function showCelebration(c){
+  celebCurrent = c;
+  var L = CONFIG.levels[c.level - 1], el = $('#celebrate'), box = clear($('#celebrate-box')), fx = clear($('#celebrate-fx'));
+  celebLastFocus = document.activeElement;
+  var acts;
+  if(L.special){
+    var pr = regionDef('parallel');
+    append(box, [
+      h('p', { class: 'eyebrow', text: 'Maxsus daraja ochildi' }),
+      h('div', { class: 'portal-fx', 'aria-hidden': 'true' }, h('span', { class: 'rg' }), h('span', { class: 'rg2' }), h('span', { class: 'core' })),
+      h('h2', { text: 'Portal ochildi!' }),
+      h('p', { class: 'sub', text: c.level + '-daraja — ' + L.name }),
+      h('p', { text: 'Tabriklaymiz, ' + state.name + '! Sen barcha bosqichlardan o‘tding va sirli portal endi sening oldingda ochiq.' }),
+      h('div', { class: 'm-lore', style: 'text-align:left' }, h('h4', { text: 'Yangi hudud: ' + pr.name }), h('p', { text: pr.desc })),
+      h('div', { class: 'reward-row', style: 'justify-content:center' }, rewardChips(L.reward))
+    ]);
+    acts = [
+      { label: 'Parallel olamlarni ko‘rish', kind: 'primary', onClick: function(){ navigate('discover'); setTimeout(function(){ openRegion('parallel'); }, 60); } },
+      { label: 'Keyinroq', kind: 'ghost' }
+    ];
+  } else {
+    append(box, [
+      h('p', { class: 'eyebrow', text: 'Daraja oshdi' }),
+      h('h2', { text: c.level + '-daraja' }),
+      h('p', { class: 'sub', text: L.name }),
+      h('p', { text: L.summary }),
+      h('div', { class: 'reward-row', style: 'justify-content:center' }, rewardChips(L.reward)),
+      h('ul', { class: 'perks', style: 'text-align:left;display:grid;gap:6px;width:100%' }, L.perks.map(function(p){ return h('li', { style: 'display:flex;gap:8px;color:var(--muted);font-size:.92rem' }, icon('check', 16), h('span', { text: p })); }))
+    ]);
+    if(L.note) box.appendChild(h('p', { class: 'notice', text: L.note }));
+    acts = [{ label: 'Davom etish', kind: 'primary' }];
+  }
+  box.appendChild(h('div', { class: 'cel-actions' }, acts.map(function(a){
+    return h('button', { class: 'btn ' + (a.kind === 'primary' ? 'btn-primary' : 'btn-ghost'), type: 'button', onClick: function(){ closeCelebration(); if(a.onClick) a.onClick(); } }, a.label);
+  })));
+  if(motionOn()){
+    var colors = ['#3de0ff', '#9a6bff', '#ffcf5a', '#47e3a6', '#ff9ad5', '#ffffff'], n = L.special ? 36 : 26;
+    for(var i = 0; i < n; i++){
+      var ang = Math.random() * Math.PI * 2, dist = 140 + Math.random() * 220;
+      var p = h('i', { class: 'c' });
+      p.style.setProperty('--dx', Math.round(Math.cos(ang) * dist) + 'px');
+      p.style.setProperty('--dy', Math.round(Math.sin(ang) * dist) + 'px');
+      p.style.setProperty('--rt', Math.round(Math.random() * 540 - 270) + 'deg');
+      p.style.setProperty('--cc', colors[i % colors.length]);
+      p.style.setProperty('--dl', (Math.random() * .25).toFixed(2) + 's');
+      fx.appendChild(p);
+    }
+    for(var j = 0; j < 3; j++){ var r = h('i', { class: 'r' }); r.style.setProperty('--dl', (j * .8) + 's'); fx.appendChild(r); }
+  }
+  el.hidden = false;
+  var b = box.querySelector('.btn-primary'); if(b) b.focus({ preventScroll: true });
+  haptic('success');
+}
+function rewardChips(obj){
+  var keys = Object.keys(obj || {});
+  if(!keys.length) return null;
+  return keys.map(function(k){ return h('span', { class: 'chip item', text: '+' + obj[k] + ' ' + ITEMS[k].name }); });
+}
+function closeCelebration(){
+  var el = $('#celebrate');
+  if(el.hidden) return;
+  el.hidden = true; clear($('#celebrate-fx'));
+  celebOpen = false; celebCurrent = null;
+  if(celebLastFocus && document.body.contains(celebLastFocus)){ try { celebLastFocus.focus({ preventScroll: true }); } catch(e){} }
+  flushCelebrations();
+}
+
+/* ---- HUD ---- */
+var hudLevel = 0;
+function updateHUD(){
+  var L = CONFIG.levels[state.level - 1], next = CONFIG.levels[state.level];
+  $('#hud-name').textContent = state.name || 'Sayyoh';
+  $('#hud-lvlname').textContent = L.name;
+  $('#hud-lvl').textContent = state.level + '-daraja';
+  var av = clear($('#hud-avatar')); av.appendChild(avatarEl(state.avatar, 42));
+  var pct, txt;
+  if(next){ pct = (state.xp - L.xp) / (next.xp - L.xp) * 100; txt = fmtNum(state.xp) + ' / ' + fmtNum(next.xp) + ' XP'; }
+  else { pct = 100; txt = fmtNum(state.xp) + ' XP · MAX'; }
+  pct = clamp(pct, 0, 100);
+  var fill = $('#hud-fill');
+  if(hudLevel && state.level > hudLevel && motionOn()){
+    fill.style.width = '100%';
+    setTimeout(function(){ fill.style.transition = 'none'; fill.style.width = '0%'; void fill.offsetWidth; fill.style.transition = ''; fill.style.width = pct + '%'; }, 750);
+  } else { fill.style.width = pct + '%'; }
+  hudLevel = state.level;
+  $('#hud-xp').textContent = txt;
+  $('#hud-bar').setAttribute('aria-valuenow', String(Math.round(pct)));
+  $('#hud-bar').setAttribute('aria-valuetext', txt);
+}
+
+/* ---- Navigatsiya ---- */
+var NAV = [
+  { id: 'world', label: 'Olamim', short: 'Olamim', icon: 'world' },
+  { id: 'discover', label: 'Kashfiyotlar', short: 'Kashfiyot', icon: 'discover' },
+  { id: 'quests', label: 'Topshiriqlar', short: 'Topshiriq', icon: 'quests' },
+  { id: 'inventory', label: 'Inventar', short: 'Inventar', icon: 'inventory' },
+  { id: 'level', label: 'Darajam', short: 'Darajam', icon: 'level' },
+  { id: 'profile', label: 'Profil', short: 'Profil', icon: 'profile' }
+];
+var current = 'world';
+function buildNav(){
+  [['#side-nav', false], ['#bottom-nav', true]].forEach(function(p){
+    var c = clear($(p[0]));
+    NAV.forEach(function(n){
+      c.appendChild(h('button', { class: 'nav-btn', type: 'button', 'data-view': n.id, onClick: function(){ navigate(n.id); } },
+        icon(n.icon, p[1] ? 22 : 22), h('span', { class: 'lbl', text: p[1] ? n.short : n.label }), h('span', { class: 'dot', hidden: true, 'aria-hidden': 'true' })));
+    });
+  });
+}
+function updateNav(){
+  var readyN = readyQuestIds().length;
+  $$('.nav-btn').forEach(function(b){
+    var v = b.getAttribute('data-view');
+    if(v === current) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+    var dot = b.querySelector('.dot');
+    if(dot) dot.hidden = !(v === 'quests' && readyN > 0);
+    if(v === 'quests') b.setAttribute('aria-label', readyN > 0 ? 'Topshiriqlar, ' + readyN + ' ta mukofot tayyor' : 'Topshiriqlar');
+  });
+}
+function navigate(id){
+  if(VIEWS.indexOf(id) < 0) id = 'world';
+  current = id;
+  state.lastView = id; saveState();
+  $$('.view').forEach(function(v){ v.hidden = v.getAttribute('data-view') !== id; });
+  var v = $('#view-' + id);
+  v.classList.remove('view-in'); void v.offsetWidth; v.classList.add('view-in');
+  renderView(id); updateNav();
+  window.scrollTo(0, 0);
+  var hd = v.querySelector('h2'); if(hd){ hd.setAttribute('tabindex', '-1'); hd.focus({ preventScroll: true }); }
+}
+function renderAll(){
+  if(!state) return;
+  var fk = document.activeElement && document.activeElement.getAttribute ? document.activeElement.getAttribute('data-fk') : null;
+  updateHUD(); updateNav();
+  if(!$('#app').hidden) renderView(current);
+  if(fk){
+    var el = document.querySelector('[data-fk="' + fk + '"]');
+    if(el) el.focus({ preventScroll: true });
+  }
+}
+function renderView(id){
+  if(id === 'world') renderWorld();
+  else if(id === 'discover') renderDiscover();
+  else if(id === 'quests') renderQuests();
+  else if(id === 'inventory') renderInventory();
+  else if(id === 'level') renderLevel();
+  else if(id === 'profile') renderProfile();
+}
+function viewHeader(title, sub, right){
+  return h('header', { class: 'vh' }, h('div', null, h('h2', { text: title }), sub ? h('p', { text: sub }) : null), right || null);
+}
+
+/* =========================================================
+   7. OLAM SAHNASI (SVG)
+   ========================================================= */
+// p — ID prefiksi (bir sahifada ikki sahna bo‘lganda to‘qnashmasligi uchun)
+function sceneSVG(p, interactive){
+  var rnd = mulberry32(7);
+  function A(id, label, region){
+    return interactive ? 'data-obj="' + id + '"' + (region ? ' data-region="' + region + '"' : '') + ' tabindex="0" role="button" aria-label="' + label + '"' : '';
+  }
+  var i, stars = '';
+  for(i = 0; i < 64; i++){
+    var x = (rnd() * 800).toFixed(0), y = (rnd() * 470).toFixed(0), r = (rnd() * 1.4 + .4).toFixed(1);
+    var tw = i % 5 === 0 ? ' class="tw" style="animation-delay:' + (rnd() * 4).toFixed(1) + 's"' : '';
+    stars += '<circle cx="' + x + '" cy="' + y + '" r="' + r + '" fill="#cfe4ff" opacity="' + (rnd() * .6 + .3).toFixed(2) + '"' + tw + '/>';
+  }
+  var city = '';
+  for(i = 0; i < 15; i++){
+    var bx = 300 + i * 15, bw = 12 + Math.floor(rnd() * 4), mid = 1 - Math.abs(i - 7) / 8;
+    var hg = Math.round(26 + mid * 70 * rnd() + rnd() * 22), by = 545 - hg;
+    city += '<rect x="' + bx + '" y="' + by + '" width="' + bw + '" height="' + hg + '" fill="#0d1f6b" stroke="#2f58ff" stroke-opacity=".35"/>';
+    for(var k = 0; k < 3; k++) if(rnd() > .45) city += '<rect x="' + (bx + 3 + (k % 2) * 5) + '" y="' + (by + 6 + k * 12) + '" width="3" height="4" fill="#7ee8ff" opacity=".85"/>';
+  }
+  var motes = '';
+  for(i = 0; i < 10; i++){
+    motes += '<circle class="mote" cx="' + (120 + rnd() * 560).toFixed(0) + '" cy="' + (380 + rnd() * 300).toFixed(0) + '" r="' + (1.5 + rnd() * 1.8).toFixed(1) + '" fill="' + (i % 2 ? '#7ee8ff' : '#c7a6ff') + '" style="animation-delay:' + (rnd() * 9).toFixed(1) + 's;animation-duration:' + (7 + rnd() * 5).toFixed(1) + 's"/>';
+  }
+  var lockMark = '<g class="lockmark" transform="translate(0 44)"><circle r="22" fill="#050a22" stroke="#7ea0ff" stroke-opacity=".7"/><rect x="-8" y="-3" width="16" height="12" rx="3" fill="none" stroke="#cfe0ff" stroke-width="2.2"/><path d="M-5 -3v-4a5 5 0 0 1 10 0v4" fill="none" stroke="#cfe0ff" stroke-width="2.2"/></g>';
+  function island(id, cx, cy, s, dl, du, deco, label){
+    return '<g transform="translate(' + cx + ' ' + cy + ') scale(' + s + ')"><g class="float" style="animation-delay:' + dl + 's;animation-duration:' + du + 's">' +
+      '<g class="obj" ' + A(id, label, id) + '><circle class="hit" r="100" cy="30" fill="transparent"/>' +
+      '<g class="body"><path d="M-80 0Q-72 34 -44 52Q-26 84 0 112Q26 84 44 52Q72 34 80 0Z" fill="url(#' + p + '-rock)"/>' +
+      '<ellipse rx="80" ry="18" fill="url(#' + p + '-grass)" stroke="#8ef5ff" stroke-opacity=".5"/>' + deco + '</g>' + lockMark + '</g></g></g>';
+  }
+  var decoStart = '<rect x="-26" y="-30" width="26" height="20" fill="#18297a" stroke="#4d7cff" stroke-opacity=".5"/><path d="M-32 -30L-13 -48L6 -30Z" fill="#3de0ff" opacity=".85"/><rect x="-16" y="-22" width="6" height="12" fill="#ffe27a" opacity=".9"/><rect x="34" y="-26" width="4" height="18" fill="#3b2a8a"/><circle cx="36" cy="-34" r="15" fill="#2fe0d0" opacity=".9"/><circle cx="28" cy="-28" r="9" fill="#58f0ff" opacity=".7"/><path d="M52 -4L56 -22L60 -4Z" fill="#9a6bff"/>';
+  var decoValley = '<rect x="-3" y="-44" width="6" height="42" fill="#3b2a8a"/><circle cy="-54" r="26" fill="#58f0ff" opacity=".85"/><circle cx="-20" cy="-40" r="14" fill="#3de0ff" opacity=".7"/><circle cx="20" cy="-42" r="15" fill="#9a6bff" opacity=".7"/><circle cx="-44" cy="-8" r="3" fill="#ffe27a"/><circle cx="46" cy="-6" r="3" fill="#ff9ad5"/>';
+  var decoRuins = '<rect x="-44" y="-40" width="12" height="38" fill="#6070b0"/><rect x="-22" y="-62" width="12" height="60" fill="#7585c5"/><path d="M0 -28L14 -34L14 -2L0 -2Z" fill="#5565a5"/><rect x="26" y="-48" width="12" height="46" fill="#6070b0"/><rect x="-48" y="-64" width="24" height="6" fill="#8a9bd8" opacity=".6"/>';
+  var decoGate = '<path d="M-34 -2V-48A34 34 0 0 1 34 -48V-2" fill="none" stroke="#9a6bff" stroke-width="9" stroke-linecap="round"/><circle cy="-42" r="18" fill="url(#' + p + '-glow)"/><path d="M0 -54l4 10 10 2-8 7 2 11-8-6-8 6 2-11-8-7 10-2z" fill="#fff" opacity=".9"/>';
+
+  var lamps = '', lp = [[120, 650], [205, 695], [300, 722], [500, 722], [595, 695], [680, 650]];
+  lp.forEach(function(q, n){ lamps += '<line x1="' + q[0] + '" y1="' + (q[1] - 34) + '" x2="' + q[0] + '" y2="' + q[1] + '" stroke="#8aa0ff" stroke-opacity=".5"/><circle class="lamp" cx="' + q[0] + '" cy="' + q[1] + '" r="9" fill="#ffe27a" style="animation-delay:' + (n * .4) + 's"/><circle cx="' + q[0] + '" cy="' + q[1] + '" r="20" fill="url(#' + p + '-lamp)" opacity=".7"/>'; });
+
+  return '<svg class="scene" viewBox="0 0 800 800" preserveAspectRatio="xMidYMid slice" ' + (interactive ? 'role="group" aria-label="Sening raqamli olaming"' : 'aria-hidden="true" focusable="false"') + ' xmlns="http://www.w3.org/2000/svg">' +
+  '<defs>' +
+    '<linearGradient id="' + p + '-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#02040d"/><stop offset=".45" stop-color="#071241"/><stop offset=".74" stop-color="#1b1466"/><stop offset="1" stop-color="#3a1a7a"/></linearGradient>' +
+    '<radialGradient id="' + p + '-hz"><stop offset="0" stop-color="#6a5bff" stop-opacity=".55"/><stop offset="1" stop-color="#6a5bff" stop-opacity="0"/></radialGradient>' +
+    '<radialGradient id="' + p + '-moon" cx=".35" cy=".35"><stop offset="0" stop-color="#e6f3ff"/><stop offset=".6" stop-color="#7aa6ff"/><stop offset="1" stop-color="#3b3fa8"/></radialGradient>' +
+    '<linearGradient id="' + p + '-aur" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#3de0ff" stop-opacity="0"/><stop offset=".4" stop-color="#47e3a6" stop-opacity=".5"/><stop offset=".7" stop-color="#9a6bff" stop-opacity=".45"/><stop offset="1" stop-color="#9a6bff" stop-opacity="0"/></linearGradient>' +
+    '<linearGradient id="' + p + '-rock" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a3d9c"/><stop offset="1" stop-color="#0a1235"/></linearGradient>' +
+    '<linearGradient id="' + p + '-grass" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2fe0d0"/><stop offset="1" stop-color="#2a6fe0"/></linearGradient>' +
+    '<radialGradient id="' + p + '-glow"><stop offset="0" stop-color="#b9a2ff" stop-opacity=".9"/><stop offset="1" stop-color="#b9a2ff" stop-opacity="0"/></radialGradient>' +
+    '<radialGradient id="' + p + '-lamp"><stop offset="0" stop-color="#ffe27a" stop-opacity=".8"/><stop offset="1" stop-color="#ffe27a" stop-opacity="0"/></radialGradient>' +
+    '<radialGradient id="' + p + '-city"><stop offset="0" stop-color="#4da8ff" stop-opacity=".6"/><stop offset="1" stop-color="#4da8ff" stop-opacity="0"/></radialGradient>' +
+    '<linearGradient id="' + p + '-beam" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#7ee8ff" stop-opacity=".7"/><stop offset="1" stop-color="#7ee8ff" stop-opacity="0"/></linearGradient>' +
+    '<linearGradient id="' + p + '-ground" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0f2275"/><stop offset="1" stop-color="#050a26"/></linearGradient>' +
+    '<radialGradient id="' + p + '-pcore"><stop offset="0" stop-color="#ffffff"/><stop offset=".35" stop-color="#9be8ff"/><stop offset=".75" stop-color="#6a5bff"/><stop offset="1" stop-color="#3b2fb8"/></radialGradient>' +
+    '<radialGradient id="' + p + '-phalo"><stop offset="0" stop-color="#7a8cff" stop-opacity=".6"/><stop offset="1" stop-color="#7a8cff" stop-opacity="0"/></radialGradient>' +
+  '</defs>' +
+  '<rect width="800" height="800" fill="url(#' + p + '-sky)"/>' +
+  '<ellipse cx="400" cy="540" rx="440" ry="170" fill="url(#' + p + '-hz)"/>' +
+  '<g class="aurora"><path d="M-40 250C130 180 300 290 460 220S720 170 840 240L840 320C700 260 560 340 420 290S130 260 -40 320Z" fill="url(#' + p + '-aur)" opacity=".55"/></g>' +
+  '<g>' + stars + '</g>' +
+  '<g transform="translate(625 175)"><circle r="46" fill="url(#' + p + '-moon)"/><ellipse rx="80" ry="14" fill="none" stroke="#a9d0ff" stroke-opacity=".4" stroke-width="2" transform="rotate(-18)"/></g>' +
+  '<path d="M0 520L90 440L150 490L240 410L330 500L420 450L520 510L610 430L700 500L800 450V800H0Z" fill="#0a1546"/>' +
+  // Uzoqdagi yorug' shahar
+  '<g class="obj" ' + A('city', 'Uzoqdagi yorug‘ shahar') + '><circle class="hit" cx="410" cy="470" r="105" fill="transparent"/><g class="body">' +
+    '<ellipse cx="410" cy="505" rx="140" ry="64" fill="url(#' + p + '-city)"/>' + city +
+    '<rect x="402" y="380" width="8" height="165" fill="#14298a" stroke="#4d7cff" stroke-opacity=".5"/><path d="M406 378L396 150H416Z" fill="url(#' + p + '-beam)" opacity=".5"/><circle cx="406" cy="376" r="5" fill="#fff"/></g></g>' +
+  '<path d="M0 565L110 505L200 552L310 495L420 560L540 500L660 556L800 510V800H0Z" fill="#0b1c5c" opacity=".95"/>' +
+  // Orollar
+  island('ruins', 195, 255, .78, 0.6, 8.4, decoRuins, 'Unutilgan xarobalar') +
+  island('gate', 400, 175, .6, 1.4, 7.2, decoGate, 'Yulduzlar darvozasi') +
+  island('valley', 585, 305, .82, 2.2, 9, decoValley, 'Yorug‘lik vodiysi') +
+  island('island', 205, 432, .95, 0, 7.6, decoStart, 'Boshlang‘ich orol') +
+  // Yer
+  '<path d="M0 604C150 574 300 614 400 604S650 574 800 604V800H0Z" fill="url(#' + p + '-ground)"/>' +
+  // Sukunat hududi
+  '<g class="obj" ' + A('silence', 'Sukunat hududi', 'silence') + '><circle class="hit" cx="150" cy="640" r="96" fill="transparent"/><g class="body">' +
+    '<ellipse cx="150" cy="648" rx="104" ry="26" fill="#04071a" opacity=".85"/><ellipse cx="150" cy="648" rx="72" ry="15" fill="none" stroke="#7ea0ff" stroke-opacity=".4"/><ellipse cx="150" cy="648" rx="40" ry="7" fill="none" stroke="#7ea0ff" stroke-opacity=".55"/>' +
+    '<rect x="102" y="596" width="11" height="48" rx="4" fill="#33408f"/><rect x="176" y="590" width="13" height="54" rx="4" fill="#3a49a0"/><rect x="143" y="608" width="10" height="36" rx="4" fill="#2a3680"/></g>' +
+    '<g transform="translate(150 640) scale(.8)">' + lockMark + '</g></g>' +
+  // Portal
+  '<g class="obj portal" ' + A('portal', 'Sirli portal') + ' transform="translate(400 575)"><circle class="hit" cy="0" r="92" fill="transparent"/>' +
+    '<ellipse class="p-halo" rx="125" ry="150" fill="url(#' + p + '-phalo)"/>' +
+    '<g class="body"><path d="M-50 74V-26A50 64 0 0 1 50 -26V74" fill="none" stroke="#6f8cff" stroke-width="10" stroke-linecap="round" opacity=".95"/>' +
+    '<ellipse class="p-core" cx="0" cy="4" rx="40" ry="58" fill="url(#' + p + '-pcore)"/>' +
+    '<ellipse class="p-ring" cx="0" cy="4" rx="46" ry="64" fill="none" stroke="#7ee8ff" stroke-width="2" stroke-dasharray="6 10"/>' +
+    '<g class="p-extra"><ellipse class="p-ring2" cx="0" cy="4" rx="58" ry="78" fill="none" stroke="#c7a6ff" stroke-width="2.4" stroke-dasharray="3 8"/></g>' +
+    '<path d="M-74 80H74" stroke="#4d7cff" stroke-width="6" stroke-linecap="round" opacity=".7"/></g></g>' +
+  // Dekor (chiroqlar) — inventardan qo'yiladi
+  '<g class="decor">' + lamps + '</g>' +
+  '<path d="M0 652C180 622 320 672 400 658S640 626 800 662V800H0Z" fill="#050a22"/>' +
+  // Yashirin yulduz
+  '<g class="obj star" ' + A('star', 'Yashirin miltillovchi yulduz') + ' transform="translate(645 432)"><circle class="hit" r="40" fill="transparent"/>' +
+    '<circle class="hint-ring" r="30" fill="none" stroke="#ffe27a" stroke-width="2.5" stroke-dasharray="5 6"/>' +
+    '<path class="spark" d="M0 -13L3.4 -3.4L13 0L3.4 3.4L0 13L-3.4 3.4L-13 0L-3.4 -3.4Z" fill="#fff"/></g>' +
+  motes +
+  '</svg>';
+}
+
+var sceneBuilt = false;
+function wireScene(root){
+  root.addEventListener('click', function(e){
+    var t = e.target.closest ? e.target.closest('[data-obj]') : null;
+    if(t) openObject(t.getAttribute('data-obj'));
+  });
+  root.addEventListener('keydown', function(e){
+    if(e.key !== 'Enter' && e.key !== ' ') return;
+    var t = e.target.closest ? e.target.closest('[data-obj]') : null;
+    if(t){ e.preventDefault(); openObject(t.getAttribute('data-obj')); }
+  });
+}
+function updateSceneState(){
+  var svg = $('#view-world svg.scene');
+  if(!svg) return;
+  svg.classList.toggle('lv4', state.level >= 4);
+  svg.classList.toggle('decor-on', !!state.flags.decorOn);
+  svg.classList.toggle('star-found', !!state.flags.objectFound);
+  svg.classList.toggle('compass-on', !!state.flags.compassOn && !state.flags.objectFound);
+  $$('[data-region]', svg).forEach(function(g){
+    var id = g.getAttribute('data-region');
+    g.classList.toggle('locked', !state.regions[id].unlocked);
+  });
+  var silence = svg.querySelector('[data-obj="silence"]');
+  if(silence) silence.classList.toggle('locked', !state.regions.silence.unlocked);
+}
+
+var OBJECT_INFO = {
+  city: { title: 'Uzoqdagi yorug‘ shahar', tag: 'Ufqdagi obyekt',
+    text: ['Ufq chizig‘ida yorug‘ shahar miltillab turadi. Unga hozircha yetib bo‘lmaydi, ammo sen qilgan har bir qadam uning nurini kuchaytiradi.',
+           'Kelajakda bu shahar boshqa foydalanuvchilarning olamlari bilan uchrashadigan joy bo‘lishi rejalashtirilgan. Hozirgi prototipda u faqat manzara.'] }
+};
+function openObject(id){
+  if(id === 'portal') return openPortal();
+  if(id === 'star') return findStar();
+  if(regionDef(id)) return openRegion(id);
+  var o = OBJECT_INFO[id];
+  if(o){
+    openModal({ title: o.title, body: [h('p', { class: 'm-tag', text: o.tag })].concat(o.text.map(function(t){ return h('p', { text: t }); })), actions: [{ label: 'Yopish', kind: 'primary' }] });
+  }
+}
+function openPortal(){
+  state.flags.portalViewed = true;
+  var open = state.level >= 4, next = CONFIG.levels[3], left = Math.max(0, next.xp - state.xp);
+  var body = [
+    h('p', { class: 'm-tag', text: open ? 'Portal faol' : 'Portal uxlayapti' }),
+    h('p', { text: 'Bu sirli portal olamingdan boshqa — parallel olamlarga olib boradigan yo‘l. U faqat yetarli tajriba to‘plagan sayyohlar uchun ochiladi.' })
+  ];
+  if(open){
+    body.push(h('div', { class: 'm-note ok' }, icon('check', 18), h('span', { text: 'Portal ochiq! Parallel olamlar hududini ko‘rishing mumkin.' })));
+  } else {
+    body.push(h('div', { class: 'm-note lock' }, icon('lock', 18), h('span', { text: 'Portal ' + next.level + '-darajada (' + fmtNum(next.xp) + ' XP) ochiladi. Yana ' + fmtNum(left) + ' XP kerak.' })));
+  }
+  var acts = [];
+  if(open) acts.push({ label: 'Parallel olamlarga kirish', kind: 'primary', onClick: function(){ openRegion('parallel'); }, keep: true });
+  else acts.push({ label: 'Topshiriqlarga o‘tish', kind: 'primary', onClick: function(){ navigate('quests'); } });
+  acts.push({ label: 'Yopish', kind: 'ghost' });
+  openModal({ title: 'Sirli portal', body: body, actions: acts });
+  commit();
+}
+function openRegion(id, extra){
+  var r = regionDef(id); if(!r) return;
+  var st = state.regions[id], reqs = regionReqs(r);
+  var canUnlock = !st.unlocked && !r.auto && reqs.every(function(q){ return q.ok; });
+  var body = [regionArt(r.id, !st.unlocked, true), h('p', { class: 'm-tag', text: r.level + '-daraja hududi' }), h('p', { text: r.desc })];
+  var acts = [];
+  if(st.unlocked){
+    body.push(h('div', { class: 'm-note ok' }, icon('check', 18), h('span', { text: 'Hudud ochilgan' })));
+    if(st.explored) body.push(h('div', { class: 'm-lore' }, h('h4', { text: 'Kashfiyot' }), h('p', { text: r.lore })));
+    if(extra) body.push(h('div', { class: 'reward-row' }, h('span', { class: 'chip item', text: 'Topildi: ' + extra })));
+    acts.push(st.explored ? { label: 'O‘rganilgan ✓', kind: 'ghost', disabled: true, keep: true }
+                          : { label: 'Hududni o‘rganish', kind: 'primary', keep: true, onClick: function(){ var t = exploreRegion(id); openRegion(id, t); } });
+  } else {
+    body.push(h('div', { class: 'm-note lock' }, icon('lock', 18), h('span', { text: r.auto ? 'Bu hudud faqat ' + r.level + '-darajaga yetganda portal orqali ochiladi.' : 'Hudud yopiq. Ochish uchun quyidagilar kerak:' })));
+    body.push(h('ul', { class: 'req-list' }, reqs.map(function(q){ return h('li', { class: q.ok ? 'ok' : 'no' }, icon(q.ok ? 'check' : 'close', 16), h('span', { text: q.text })); })));
+    if(!r.auto) acts.push({ label: canUnlock ? 'Hududni ochish' : 'Shartlar bajarilmagan', kind: 'primary', disabled: !canUnlock, keep: true,
+      onClick: function(){ if(unlockRegion(id)) openRegion(id); } });
+  }
+  acts.push({ label: 'Yopish', kind: 'ghost' });
+  openModal({ title: r.name, body: body, actions: acts });
+}
+
+/* =========================================================
+   8. BO‘LIMLAR
+   ========================================================= */
+var ART = {
+  island: '<ellipse cx="100" cy="62" rx="52" ry="11" fill="#2fe0d0" opacity=".9"/><path d="M48 62Q58 84 86 92L100 106L114 92Q142 84 152 62Z" fill="#1a2a78"/><rect x="118" y="38" width="4" height="22" fill="#3b2a8a"/><circle cx="120" cy="34" r="12" fill="#58f0ff" opacity=".85"/><path d="M76 62V48l12-10 12 10v14z" fill="#3de0ff" opacity=".8"/><circle cx="30" cy="20" r="2" fill="#fff"/><circle cx="170" cy="30" r="1.6" fill="#fff"/>',
+  valley: '<path d="M0 90Q50 50 100 80T200 70V110H0Z" fill="#12307e"/><path d="M0 100Q60 70 120 95T200 90V110H0Z" fill="#0b1c5c"/><rect x="98" y="46" width="4" height="34" fill="#3b2a8a"/><circle cx="100" cy="38" r="20" fill="#58f0ff" opacity=".85"/><circle cx="84" cy="48" r="11" fill="#9a6bff" opacity=".7"/><circle cx="116" cy="50" r="12" fill="#3de0ff" opacity=".7"/>',
+  ruins: '<rect x="50" y="40" width="14" height="52" fill="#6575b8"/><rect x="82" y="26" width="14" height="66" fill="#7686c9"/><path d="M110 50l16-8v50h-16z" fill="#5565a5"/><rect x="138" y="44" width="14" height="48" fill="#6575b8"/><rect x="40" y="90" width="130" height="8" fill="#2b3a85"/><circle cx="165" cy="22" r="10" fill="#cfe0ff" opacity=".6"/>',
+  gate: '<path d="M64 96V52a36 36 0 0 1 72 0v44" fill="none" stroke="#9a6bff" stroke-width="10" stroke-linecap="round"/><circle cx="100" cy="58" r="22" fill="#6a5bff" opacity=".45"/><path d="M100 44l4 10 10 2-8 7 2 11-8-6-8 6 2-11-8-7 10-2z" fill="#fff" opacity=".9"/>',
+  silence: '<ellipse cx="100" cy="82" rx="80" ry="14" fill="#04071a" opacity=".85"/><ellipse cx="100" cy="82" rx="55" ry="8" fill="none" stroke="#7ea0ff" stroke-opacity=".4"/><ellipse cx="100" cy="82" rx="30" ry="4" fill="none" stroke="#7ea0ff" stroke-opacity=".5"/><rect x="60" y="40" width="10" height="38" rx="4" fill="#33408f"/><rect x="128" y="34" width="12" height="44" rx="4" fill="#3a49a0"/><rect x="95" y="46" width="9" height="32" rx="4" fill="#2a3680"/>',
+  parallel: '<circle cx="100" cy="55" r="44" fill="none" stroke="#7ee8ff" stroke-opacity=".5" stroke-dasharray="5 8"/><circle cx="100" cy="55" r="32" fill="none" stroke="#9a6bff" stroke-width="4" stroke-opacity=".8"/><ellipse cx="100" cy="55" rx="20" ry="28" fill="#7a5cff" opacity=".7"/><ellipse cx="100" cy="55" rx="11" ry="17" fill="#d6f6ff" opacity=".85"/>'
+};
+function regionArt(id, locked, inModal){
+  var d = h('div', { class: 'art art-' + id, 'aria-hidden': 'true' });
+  d.innerHTML = '<svg viewBox="0 0 200 110" preserveAspectRatio="xMidYMid slice">' + ART[id] + '</svg>';
+  if(locked) d.appendChild(h('span', { class: 'lock-badge' }, icon('lock', 24)));
+  if(inModal){ var w = h('div', { class: 'm-art' + (locked ? ' locked' : '') }); w.appendChild(d); return w; }
+  return d;
+}
+
+/* ---- Olamim ---- */
+function renderWorld(){
+  var v = $('#view-world');
+  if(!sceneBuilt){
+    sceneBuilt = true;
+    clear(v);
+    var box = h('div', { class: 'scene-box' });
+    box.innerHTML = sceneSVG('w', true);
+    box.appendChild(h('div', { class: 'scene-hint', 'aria-hidden': 'true' }, h('span', { text: 'Obyektlarni bosib ko‘ring' })));
+    wireScene(box);
+    v.appendChild(h('header', { class: 'vh', id: 'world-head' }));
+    v.appendChild(h('div', { class: 'world-grid' }, box, h('div', { class: 'side-stack', id: 'world-side' })));
+  }
+  var L = CONFIG.levels[state.level - 1];
+  var head = clear($('#world-head'));
+  head.appendChild(h('div', null, h('h2', { text: 'Olamim' }), h('p', { text: (state.name || 'Sayyoh') + ' olami · ' + state.level + '-daraja “' + L.name + '”' })));
+  updateSceneState();
+  var side = clear($('#world-side'));
+  var unlocked = REGIONS.filter(function(r){ return state.regions[r.id].unlocked; }).length;
+  var readyN = readyQuestIds().length;
+  var collected = state.daily.collected === todayKey();
+  side.appendChild(h('div', { class: 'card panel' },
+    h('h3', { text: 'Olam holati' }),
+    h('div', { class: 'row' }, h('span', { class: 'muted', text: 'Ochilgan hududlar' }), h('b', { text: unlocked + ' / ' + REGIONS.length })),
+    h('div', { class: 'row' }, h('span', { class: 'muted', text: 'Bajarilgan topshiriqlar' }), h('b', { text: String(state.stats.completed) })),
+    readyN > 0 ? h('button', { class: 'btn btn-primary btn-sm btn-glow', type: 'button', onClick: function(){ navigate('quests'); } }, readyN + ' ta mukofot kutmoqda') : null
+  ));
+  side.appendChild(h('div', { class: 'card panel' },
+    h('h3', { text: 'Kundalik energiya' }),
+    h('p', { class: 'muted', text: collected ? 'Bugungi energiya yig‘ildi. “Kundalik topshiriq” mukofotini Topshiriqlar bo‘limida oling. Ertaga yangisi keladi.' : 'Olam har kuni yangi energiya beradi. Uni yig‘ib, kundalik topshiriqni bajaring.' }),
+    h('button', { class: 'btn ' + (collected ? '' : 'btn-primary'), type: 'button', disabled: collected, fk: 'daily-collect', onClick: collectDaily }, collected ? 'Bugun yig‘ilgan ✓' : 'Kundalik energiyani yig‘ish')
+  ));
+  var chips = [['portal', 'Portal', 'portal', state.level >= 4], ['island', 'Boshlang‘ich orol', 'world', true], ['valley', 'Yorug‘lik vodiysi', 'discover', state.regions.valley.unlocked],
+               ['ruins', 'Xarobalar', 'artifact', state.regions.ruins.unlocked], ['gate', 'Yulduzlar darvozasi', 'level', state.regions.gate.unlocked], ['silence', 'Sukunat hududi', 'spark', state.regions.silence.unlocked], ['city', 'Yorug‘ shahar', 'users', true]];
+  side.appendChild(h('div', { class: 'card panel' },
+    h('h3', { text: 'Obyektlar' }),
+    h('div', { class: 'obj-chips' }, chips.map(function(c){
+      return h('button', { class: 'obj-chip' + (c[3] ? '' : ' locked'), type: 'button', onClick: function(){ openObject(c[0]); } }, icon(c[3] ? c[2] : 'lock', 16), c[1]);
+    })),
+    state.flags.decorOn ? h('span', { class: 'chip good', text: 'Yulduz chiroqlari qo‘yilgan' }) : null
+  ));
+}
+
+/* ---- Kashfiyotlar ---- */
+function renderDiscover(){
+  var v = clear($('#view-discover'));
+  var unlocked = REGIONS.filter(function(r){ return state.regions[r.id].unlocked; }).length;
+  v.appendChild(viewHeader('Kashfiyotlar', 'Olamning yangi hududlarini oching. Har bir hudud o‘ziga xos shart bilan ochiladi.', h('span', { class: 'chip xp', text: 'Ochilgan: ' + unlocked + ' / ' + REGIONS.length })));
+  var grid = h('div', { class: 'region-grid' });
+  REGIONS.forEach(function(r){
+    var st = state.regions[r.id], reqs = regionReqs(r), unmet = reqs.filter(function(q){ return !q.ok; });
+    var card = h('article', { class: 'region-card panel' + (st.unlocked ? '' : ' locked') },
+      regionArt(r.id, !st.unlocked, false),
+      h('div', { class: 'region-body' },
+        h('div', { class: 'row', style: 'display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap' },
+          h('h3', { text: r.name }),
+          st.unlocked ? h('span', { class: 'chip good', text: st.explored ? 'O‘rganilgan' : 'Ochilgan' }) : h('span', { class: 'chip lock', text: 'Yopiq' })),
+        h('p', { text: r.desc }),
+        st.unlocked ? null : h('div', { class: 'cond', text: r.auto ? 'Ochilish sharti: ' + r.level + '-darajaga yetish (portal ochiladi).' : 'Ochilish sharti: ' + reqs.map(function(q){ return q.text.replace(/ \(.*\)$/, ''); }).join(' · ') }),
+        h('button', { class: 'btn ' + (st.unlocked && !st.explored ? 'btn-primary' : ''), type: 'button', fk: 'region-' + r.id, onClick: function(){ openRegion(r.id); } },
+          st.unlocked ? (st.explored ? 'Ko‘rish' : 'O‘rganish') : (unmet.length ? 'Shartlarni ko‘rish' : 'Hududni ochish'))
+      ));
+    grid.appendChild(card);
+  });
+  v.appendChild(grid);
+}
+
+/* ---- Topshiriqlar ---- */
+var questFilter = 'all';
+function renderQuests(){
+  var v = clear($('#view-quests'));
+  var done = QUESTS.filter(function(q){ return questStatus(q) === 'claimed'; }).length, total = QUESTS.length;
+  v.appendChild(viewHeader('Topshiriqlar', 'Topshiriqni bajaring, so‘ng mukofotni oling. Har bir mukofot faqat bir marta beriladi (kundalik topshiriq — kuniga bir marta).'));
+  var bar = h('div', { class: 'bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(total), 'aria-valuenow': String(done), 'aria-label': 'Topshiriqlar progressi' }, h('i'));
+  bar.firstChild.style.width = (done / total * 100) + '%';
+  v.appendChild(h('div', { class: 'summary panel' }, h('div', { style: 'display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap' }, h('b', { text: 'Mukofoti olingan topshiriqlar' }), h('span', { class: 'muted', text: done + ' / ' + total })), bar));
+  var counts = { all: total, todo: 0, ready: 0, claimed: 0 };
+  QUESTS.forEach(function(q){ counts[questStatus(q)]++; });
+  var tabs = h('div', { class: 'tabs', role: 'group', 'aria-label': 'Filtr' });
+  [['all', 'Barchasi'], ['todo', 'Jarayonda'], ['ready', 'Mukofot tayyor'], ['claimed', 'Olingan']].forEach(function(t){
+    tabs.appendChild(h('button', { class: 'tab', type: 'button', 'aria-pressed': String(questFilter === t[0]), fk: 'qtab-' + t[0], onClick: function(){ questFilter = t[0]; renderQuests(); } }, t[1] + ' (' + counts[t[0]] + ')'));
+  });
+  v.appendChild(tabs);
+  var list = h('div', { class: 'quest-list' });
+  var shown = QUESTS.filter(function(q){ return questFilter === 'all' || questStatus(q) === questFilter; });
+  // tayyorlari birinchi, olinganlari oxirida
+  var rank = { ready: 0, todo: 1, claimed: 2 };
+  shown = shown.slice().sort(function(a, b){ return rank[questStatus(a)] - rank[questStatus(b)]; });
+  if(!shown.length) list.appendChild(h('div', { class: 'empty panel', text: 'Bu bo‘limda hozircha topshiriq yo‘q.' }));
+  shown.forEach(function(q){
+    var s = questStatus(q);
+    var meta = [h('span', { class: 'chip xp', text: '+' + q.xp + ' XP' })];
+    Object.keys(q.items || {}).forEach(function(k){ meta.push(h('span', { class: 'chip item', text: '+' + q.items[k] + ' ' + ITEMS[k].name })); });
+    if(q.daily) meta.push(h('span', { class: 'chip warn', text: 'Kundalik' }));
+    var act;
+    if(s === 'claimed') act = h('button', { class: 'btn', type: 'button', disabled: true }, q.daily ? 'Olingan · ertaga yangilanadi' : 'Olingan ✓');
+    else if(s === 'ready') act = h('button', { class: 'btn btn-primary btn-glow', type: 'button', fk: 'claim-' + q.id, onClick: function(){ claimQuest(q.id); } }, 'Mukofotni olish');
+    else act = h('button', { class: 'btn', type: 'button', fk: 'go-' + q.id, onClick: function(){ toast(q.hint, 'info'); navigate(q.go); } }, 'Bajarish');
+    list.appendChild(h('article', { class: 'quest panel ' + s },
+      h('div', { class: 'q-ico' }, icon(s === 'claimed' ? 'check' : q.daily ? 'bolt' : 'quests', 24)),
+      h('div', { class: 'q-main' },
+        h('h3', { text: q.title }), h('p', { text: q.desc }),
+        h('ul', { class: 'steps' }, q.steps.map(function(st){ var ok = st.ok(state) || s === 'claimed'; return h('li', { class: ok ? 'ok' : '' }, icon(ok ? 'check' : 'close', 14), h('span', { text: st.t })); })),
+        h('div', { class: 'q-meta' }, meta)),
+      h('div', { class: 'q-act' }, h('span', { class: 'chip ' + (s === 'ready' ? 'good' : s === 'claimed' ? '' : 'warn'), text: s === 'ready' ? 'Mukofot tayyor' : s === 'claimed' ? 'Bajarilgan' : 'Jarayonda' }), act)
+    ));
+  });
+  v.appendChild(list);
+}
+
+/* ---- Inventar ---- */
+var invFilter = 'all';
+function renderInventory(){
+  var v = clear($('#view-inventory'));
+  v.appendChild(viewHeader('Inventar', 'Kristallar, kalitlar va olam topilmalari. Ba’zi buyumlarni ishlatish mumkin.'));
+  var tabs = h('div', { class: 'tabs', role: 'group', 'aria-label': 'Kategoriya' });
+  CATS.forEach(function(c){ tabs.appendChild(h('button', { class: 'tab', type: 'button', 'aria-pressed': String(invFilter === c[0]), fk: 'itab-' + c[0], onClick: function(){ invFilter = c[0]; renderInventory(); } }, c[1])); });
+  v.appendChild(tabs);
+  var grid = h('div', { class: 'inv-grid' });
+  var ids = Object.keys(ITEMS).filter(function(id){ return (state.inventory[id] || 0) > 0 && (invFilter === 'all' || ITEMS[id].cat === invFilter); });
+  if(!ids.length) grid = h('div', { class: 'empty panel', text: 'Bu kategoriyada hozircha buyum yo‘q. Topshiriqlar va hududlarni o‘rganib, yangi topilmalarga ega bo‘ling.' });
+  ids.forEach(function(id){
+    var it = ITEMS[id], q = state.inventory[id];
+    var label = it.action;
+    if(id === 'decor') label = state.flags.decorOn ? 'Olib qo‘yish' : 'Qo‘yish';
+    var ico = h('div', { class: 'item-ico' }, icon(it.icon, 26)); ico.style.color = it.color; ico.style.boxShadow = '0 0 18px ' + it.color + '33';
+    grid.appendChild(h('article', { class: 'item panel' },
+      h('div', { class: 'item-top' }, ico, h('h3', { text: it.name }), h('span', { class: 'qty', text: '× ' + q, 'aria-label': 'Miqdori: ' + q })),
+      h('p', { text: it.desc }),
+      id === 'decor' && state.flags.decorOn ? h('span', { class: 'chip good', text: 'Olamda turibdi' }) : null,
+      label ? h('button', { class: 'btn btn-sm', type: 'button', fk: 'use-' + id, onClick: function(){ useItem(id); } }, label) : h('span', { class: 'chip', text: 'Kolleksiya buyumi' })
+    ));
+  });
+  v.appendChild(grid);
+}
+
+/* ---- Darajam ---- */
+function renderLevel(){
+  var v = clear($('#view-level'));
+  v.appendChild(viewHeader('Darajam', 'To‘rt bosqich: uyg‘onishdan parallel olamlargacha. Chegaralar kod ichidagi CONFIG da.'));
+  var L = CONFIG.levels[state.level - 1], next = CONFIG.levels[state.level];
+  var pct = next ? clamp((state.xp - L.xp) / (next.xp - L.xp), 0, 1) : 1, C = 2 * Math.PI * 52;
+  var ring = h('div', { class: 'ring' });
+  ring.innerHTML = '<svg viewBox="0 0 120 120"><circle class="track" cx="60" cy="60" r="52" fill="none" stroke-width="10"/><circle class="prog" cx="60" cy="60" r="52" fill="none" stroke-width="10" stroke-linecap="round" stroke-dasharray="' + C.toFixed(1) + '" stroke-dashoffset="' + (C * (1 - pct)).toFixed(1) + '"/></svg>';
+  ring.appendChild(h('div', { class: 'center' }, h('b', { text: String(state.level) }), h('small', { text: 'DARAJA' })));
+  v.appendChild(h('div', { class: 'level-hero panel' }, ring, h('div', { style: 'display:flex;flex-direction:column;gap:8px' },
+    h('h3', { text: L.name }),
+    h('p', { class: 'muted', text: L.summary }),
+    h('b', { text: next ? fmtNum(state.xp) + ' XP · keyingi daraja uchun yana ' + fmtNum(next.xp - state.xp) + ' XP' : fmtNum(state.xp) + ' XP · eng yuqori daraja' }))));
+  var stages = h('div', { class: 'stages' });
+  CONFIG.levels.forEach(function(S){
+    var reached = state.level >= S.level, cur = state.level === S.level;
+    var hide = S.special && !reached;
+    var kids = [
+      h('div', { class: 'stage-head' }, h('div', { class: 'stage-num', text: String(S.level) }),
+        h('div', { style: 'flex:1;min-width:0' }, h('h3', { text: S.level + '-daraja — ' + (hide ? 'Sirli daraja' : S.name) }), h('span', { class: 'muted', text: fmtNum(S.xp) + ' XP kerak' })),
+        h('span', { class: 'chip ' + (cur ? 'xp' : reached ? 'good' : 'lock'), text: cur ? 'Joriy' : reached ? 'Ochilgan' : 'Yopiq' }))
+    ];
+    if(hide){
+      kids.push(h('p', { class: 'muted', text: 'Bu daraja yopiq. U ochilganda sirli portal faollashadi va maxsus hudud ko‘rinadi. ' + fmtNum(Math.max(0, S.xp - state.xp)) + ' XP qoldi.' }));
+    } else {
+      kids.push(h('p', { class: 'muted', text: S.summary }));
+      kids.push(h('ul', { class: 'perks' }, S.perks.map(function(p){ return h('li', null, icon(reached ? 'check' : 'lock', 16), h('span', { text: p })); })));
+      var rc = rewardChips(S.reward);
+      if(rc) kids.push(h('div', { class: 'reward-row' }, h('span', { class: 'muted', text: 'Mukofot:' }), rc));
+      if(S.note) kids.push(h('p', { class: 'notice', text: S.note }));
+    }
+    if(S.level === 3 && reached){
+      kids.push(h('button', { class: 'btn btn-sm', type: 'button', fk: 'copy-card', onClick: copyWorldCard }, 'Olam kartochkasini nusxalash'));
+    }
+    if(S.level === 4 && reached) kids.push(h('button', { class: 'btn btn-primary btn-sm', type: 'button', onClick: function(){ openRegion('parallel'); } }, 'Parallel olamlar hududi'));
+    stages.appendChild(h('article', { class: 'stage panel' + (cur ? ' current' : '') + (reached ? '' : ' locked') + (S.special ? ' special-stage' : '') }, kids));
+  });
+  v.appendChild(stages);
+}
+function worldCardText(){
+  var L = CONFIG.levels[state.level - 1];
+  var unlocked = REGIONS.filter(function(r){ return state.regions[r.id].unlocked; }).map(function(r){ return r.name; }).join(', ');
+  return ['TAIMAN: PARALLEL — Olam kartochkasi', 'Sayyoh: ' + state.name, 'Daraja: ' + state.level + ' — ' + L.name, 'XP: ' + state.xp,
+          'Ochilgan hududlar: ' + unlocked, 'Bajarilgan topshiriqlar: ' + state.stats.completed, 'Sening olaming. Sening yo‘ling. Sening tarixing.'].join('\n');
+}
+function copyWorldCard(){
+  var text = worldCardText();
+  function manual(){
+    var ta = h('textarea', { class: 'input', readonly: true, rows: '8', style: 'padding:12px;min-height:150px;resize:none', 'aria-label': 'Olam kartochkasi matni' });
+    ta.value = text;
+    openModal({ title: 'Olam kartochkasi', body: [h('p', { text: 'Matnni qo‘lda nusxalang:' }), ta], actions: [{ label: 'Yopish', kind: 'primary' }] });
+    setTimeout(function(){ ta.focus(); ta.select(); }, 50);
+  }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(function(){ toast('Olam kartochkasi nusxalandi.', 'success'); }, manual);
+  } else manual();
+}
+
+/* ---- Profil ---- */
+function renderProfile(){
+  var v = clear($('#view-profile'));
+  v.appendChild(viewHeader('Profil', 'Ismingni o‘zgartir, avatar tanla va sozlamalarni boshqar.'));
+  var L = CONFIG.levels[state.level - 1];
+  var unlocked = REGIONS.filter(function(r){ return state.regions[r.id].unlocked; }).length;
+  var left = h('div', { style: 'display:flex;flex-direction:column;gap:18px;min-width:0' });
+  left.appendChild(h('div', { class: 'profile-head panel' }, avatarEl(state.avatar, 76), h('div', { style: 'min-width:0' }, h('h3', { text: state.name || 'Sayyoh' }), h('span', { class: 'chip xp', text: state.level + '-daraja · ' + L.name }))));
+  left.appendChild(h('div', { class: 'card panel' }, h('h3', { text: 'Statistika' }),
+    h('div', { class: 'stat-grid' },
+      stat('Daraja', state.level + ' — ' + L.name), stat('XP miqdori', fmtNum(state.xp)),
+      stat('Bajarilgan topshiriqlar', String(state.stats.completed)), stat('Kashf etilgan hududlar', unlocked + ' / ' + REGIONS.length),
+      stat('Ro‘yxatdan o‘tgan sana', state.createdAt ? fmtDate(state.createdAt) : '—'), stat('Ma’lumot saqlash', storageOk ? 'Brauzer xotirasi' : 'Vaqtinchalik'))));
+  var input = h('input', { class: 'input', type: 'text', id: 'profile-name', maxlength: '20', value: state.name, autocomplete: 'off', 'aria-describedby': 'profile-msg' });
+  var msg = h('p', { class: 'field-msg', id: 'profile-msg', role: 'alert' });
+  var form = h('form', { class: 'card panel', novalidate: true, onSubmit: function(e){
+    e.preventDefault();
+    var nm = cleanName(input.value);
+    if(nm.length < 2){ msg.textContent = 'Nom kamida 2 ta belgidan iborat bo‘lsin.'; input.focus(); return; }
+    msg.textContent = '';
+    state.name = nm; state.flags.avatarSaved = true;
+    toast('Nom saqlandi: ' + nm, 'success');
+    commit();
+  } },
+    h('h3', { text: 'Sayyoh nomi' }),
+    h('div', { class: 'field' }, h('label', { for: 'profile-name', text: 'Nomingiz (2–20 belgi)' }), h('div', { class: 'profile-form' }, input, h('button', { class: 'btn btn-primary', type: 'submit' }, 'Saqlash')), msg));
+  left.appendChild(form);
+  var grid = h('div', { class: 'avatar-grid', role: 'radiogroup', 'aria-label': 'Avatar tanlash' });
+  AVATARS.forEach(function(a){
+    grid.appendChild(h('button', { class: 'avatar-opt', type: 'button', role: 'radio', 'aria-checked': String(state.avatar === a.id), 'aria-label': a.name, fk: 'av-' + a.id,
+      onClick: function(){ state.avatar = a.id; state.flags.avatarSaved = true; toast('Avatar tanlandi: ' + a.name, 'success'); commit(); } }, avatarEl(a.id, 46)));
+  });
+  left.appendChild(h('div', { class: 'card panel' }, h('h3', { text: 'Avatar' }), grid));
+  var right = h('div', { style: 'display:flex;flex-direction:column;gap:18px;min-width:0' });
+  var sets = h('div', { class: 'card panel' }, h('h3', { text: 'Sozlamalar' }),
+    switchRow('Animatsiyalar', 'Silliq o‘tishlar va effektlar. Telefon sekinlashsa o‘chiring.', state.settings.animations !== false, 'set-anim', function(on){ state.settings.animations = on; applySettings(); commit(); }),
+    switchRow('Suzuvchi zarrachalar', 'Fondagi yulduzlar va zarrachalar.', state.settings.particles !== false, 'set-part', function(on){ state.settings.particles = on; applySettings(); commit(); }),
+    switchRow('Tebranish', 'Telegram ichida yengil tebranish aks-sadosi.', state.settings.haptics !== false, 'set-hap', function(on){ state.settings.haptics = on; commit(); }),
+    h('div', { class: 'set-row' }, h('div', null, h('b', { text: 'Telegram Mini App' }), h('small', { text: TG.active ? 'Telegram ichida ochilgan (ma’lumotlar serverda tasdiqlanmagan).' : 'Oddiy brauzer rejimi. Telegram ichida ham ishlashga tayyor.' }))),
+    h('div', { class: 'set-row' }, h('div', null, h('b', { text: 'Ma’lumotlarni tiklash' }), h('small', { text: 'Barcha progress o‘chiriladi va o‘yin boshidan boshlanadi.' })),
+      h('button', { class: 'btn btn-danger btn-sm', type: 'button', fk: 'reset', onClick: resetProgress }, 'Tiklash'))
+  );
+  right.appendChild(sets);
+  if(DEV){
+    right.appendChild(h('div', { class: 'card panel' }, h('h3', { text: 'Sinov vositalari (dev)' }),
+      h('p', { class: 'muted', text: 'Faqat sinov uchun: XP qo‘shadi.' }),
+      h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' },
+        h('button', { class: 'btn btn-sm', type: 'button', onClick: function(){ addXP(100); commit(); } }, '+100 XP'),
+        h('button', { class: 'btn btn-sm', type: 'button', onClick: function(){ addXP(300); commit(); } }, '+300 XP'))));
+  }
+  right.appendChild(h('p', { class: 'muted', style: 'font-size:.8rem;padding:0 6px', text: 'TAIMAN: PARALLEL · prototip v1 · Ma’lumotlar faqat shu qurilmadagi brauzer xotirasida saqlanadi.' }));
+  v.appendChild(h('div', { class: 'profile-grid' }, left, right));
+}
+function stat(label, value){ return h('div', { class: 'stat' }, h('small', { text: label }), h('b', { text: value })); }
+function switchRow(title, sub, on, fk, cb){
+  return h('div', { class: 'set-row' }, h('div', null, h('b', { text: title }), h('small', { text: sub })),
+    h('button', { class: 'switch', type: 'button', role: 'switch', 'aria-checked': String(on), 'aria-label': title, fk: fk, onClick: function(){ cb(!on); } }));
+}
+function resetProgress(){
+  confirmDialog({ title: 'Ma’lumotlarni tiklash', text: 'Barcha XP, daraja, topshiriqlar, inventar va ochilgan hududlar o‘chiriladi. Bu amalni ortga qaytarib bo‘lmaydi. Davom etasizmi?', confirmText: 'Ha, tiklash', danger: true })
+  .then(function(ok){
+    if(!ok) return;
+    clearStore();
+    state = defaultState(); resolveSettings();
+    lastReady = {}; celebQueue.length = 0; hudLevel = 0; questFilter = 'all'; invFilter = 'all'; current = 'world';
+    applySettings(); saveState();
+    showScreen('splash'); refreshSplash();
+    toast('Ma’lumotlar tiklandi. Yangi sayohat boshlanadi!', 'success');
+  });
+}
+
+/* =========================================================
+   9. EKRANLAR: boshlang‘ich, tanishtiruv
+   ========================================================= */
+function showScreen(id){
+  ['splash', 'onboard', 'app'].forEach(function(s){
+    var el = $('#' + s), on = s === id;
+    el.hidden = !on;
+    if(on){ el.classList.remove('screen-in'); void el.offsetWidth; el.classList.add('screen-in'); }
+  });
+  window.scrollTo(0, 0);
+}
+function refreshSplash(){
+  var w = $('#splash-welcome');
+  if(state.introDone){ w.hidden = false; w.textContent = 'Qaytganing bilan, ' + state.name + '! Olaming seni kutib turibdi.'; $('#enter-btn').textContent = 'Olamga qaytish'; }
+  else { w.hidden = true; $('#enter-btn').textContent = 'Olamga kirish'; }
+  var sc = $('#splash-scene'); sc.innerHTML = sceneSVG('sp', false);
+  var svg = sc.querySelector('svg'); if(svg) svg.classList.toggle('lv4', state.level >= 4);
+}
+var ob = { step: 0, name: '', avatar: AVATARS[0].id };
+function startOnboarding(){
+  ob.step = 0; ob.name = ''; ob.avatar = state.avatar || AVATARS[0].id;
+  showScreen('onboard'); renderOnboarding();
+}
+function renderOnboarding(){
+  var c = clear($('#ob-content')), nav = clear($('#ob-nav')), dots = clear($('#ob-dots'));
+  for(var i = 0; i < 3; i++) dots.appendChild(h('i', { class: i === ob.step ? 'on' : '' }));
+  var step;
+  if(ob.step === 0){
+    step = h('div', { class: 'ob-step' }, h('p', { class: 'eyebrow', text: '1 / 3 · Xush kelibsan' }), h('h2', { id: 'ob-title', text: 'Bu — sening raqamli olaming' }),
+      h('p', { text: 'TAIMAN: PARALLEL — o‘z olamingni yaratadigan, topshiriqlar orqali tajriba to‘playdigan va yangi hududlarni kashf etadigan interaktiv muhit.' }),
+      h('ul', { class: 'ob-points' },
+        point('world', 'Olamim', 'Suzuvchi orollar, yorug‘ shahar va sirli portal bilan to‘la shaxsiy olaming.'),
+        point('discover', 'Kashfiyotlar', 'Yopiq hududlar shartlarni bajargach ochiladi.')));
+  } else if(ob.step === 1){
+    step = h('div', { class: 'ob-step' }, h('p', { class: 'eyebrow', text: '2 / 3 · Qanday ishlaydi' }), h('h2', { id: 'ob-title', text: 'To‘rt bosqichli yo‘l' }),
+      h('ul', { class: 'ob-points' },
+        point('quests', 'Topshiriqlar → XP', 'Topshiriqni bajar, mukofotni ol va tajriba to‘pla.'),
+        point('level', 'Darajalar', 'Uyg‘onish → Rivojlanish → Aloqa → Parallel olamlar.'),
+        point('portal', 'Maxsus 4-daraja', 'Eng so‘nggi daraja portalni ochadi. U boshida yopiq.')));
+  } else {
+    var inp = h('input', { class: 'input', type: 'text', id: 'ob-name', maxlength: '20', autocomplete: 'off', value: ob.name, placeholder: TG.suggest || 'Masalan: Sardor', 'aria-describedby': 'ob-msg' });
+    var msg = h('p', { class: 'field-msg', id: 'ob-msg', role: 'alert' });
+    inp.addEventListener('input', function(){ ob.name = inp.value; });
+    inp.addEventListener('keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); finishOnboarding(inp, msg); } });
+    var grid = h('div', { class: 'avatar-grid', role: 'radiogroup', 'aria-label': 'Avatar tanlash' });
+    AVATARS.forEach(function(a){
+      grid.appendChild(h('button', { class: 'avatar-opt', type: 'button', role: 'radio', 'aria-checked': String(ob.avatar === a.id), 'aria-label': a.name,
+        onClick: function(){ ob.avatar = a.id; $$('.avatar-opt', grid).forEach(function(b){ b.setAttribute('aria-checked', String(b.getAttribute('aria-label') === a.name)); }); } }, avatarEl(a.id, 46)));
+    });
+    step = h('div', { class: 'ob-step' }, h('p', { class: 'eyebrow', text: '3 / 3 · Tanishuv' }), h('h2', { id: 'ob-title', text: 'O‘zingga nom tanla' }),
+      h('div', { class: 'field' }, h('label', { for: 'ob-name', text: 'Sayyoh nomi (2–20 belgi)' }), inp, msg),
+      h('div', { class: 'field' }, h('label', { text: 'Avatar' }), grid));
+    setTimeout(function(){ inp.focus({ preventScroll: true }); }, 80);
+  }
+  c.appendChild(step);
+  if(ob.step > 0) nav.appendChild(h('button', { class: 'btn btn-ghost', type: 'button', onClick: function(){ ob.step--; renderOnboarding(); } }, 'Orqaga'));
+  else nav.appendChild(h('button', { class: 'btn btn-ghost', type: 'button', onClick: function(){ ob.step = 2; renderOnboarding(); } }, 'O‘tkazib yuborish'));
+  if(ob.step < 2) nav.appendChild(h('button', { class: 'btn btn-primary grow', type: 'button', onClick: function(){ ob.step++; renderOnboarding(); } }, 'Keyingi'));
+  else nav.appendChild(h('button', { class: 'btn btn-primary grow', type: 'button', onClick: function(){ finishOnboarding($('#ob-name'), $('#ob-msg')); } }, 'Olamni boshlash'));
+}
+function point(ic, title, text){ return h('li', null, icon(ic, 22), h('div', null, h('b', { text: title }), h('span', { class: 't', text: text }))); }
+function finishOnboarding(inp, msg){
+  var nm = cleanName(inp.value);
+  if(nm.length < 2){ msg.textContent = 'Nom kamida 2 ta belgidan iborat bo‘lsin.'; inp.focus(); return; }
+  state.name = nm; state.avatar = ob.avatar; state.introDone = true; state.flags.introDone = true;
+  state.createdAt = new Date().toISOString();
+  saveState();
+  enterApp();
+  toast('Xush kelibsan, ' + nm + '! Topshiriqlar bo‘limida birinchi mukofotingni ol.', 'success');
+}
+function enterApp(){
+  showScreen('app');
+  lastReady = {};
+  if(state.introDone === true){ /* birinchi kirishda ham yangi tayyor topshiriqlar haqida xabar chiqishi uchun lastReady bo‘sh */ }
+  navigate(state.lastView || 'world');
+  commit();
+}
+
+/* =========================================================
+   10. FON CANVAS VA SOZLAMALAR
+   ========================================================= */
+var bg = { cv: null, ctx: null, w: 0, h: 0, dpr: 1, stars: [], motes: [], raf: 0, running: false };
+function bgBuild(){
+  bg.dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  bg.w = window.innerWidth; bg.h = window.innerHeight;
+  bg.cv.width = Math.round(bg.w * bg.dpr); bg.cv.height = Math.round(bg.h * bg.dpr);
+  bg.ctx.setTransform(bg.dpr, 0, 0, bg.dpr, 0, 0);
+  var ns = Math.round(Math.min(110, bg.w * bg.h / 9000)), nm = Math.round(Math.min(32, bg.w * bg.h / 32000)), i;
+  bg.stars = []; bg.motes = [];
+  for(i = 0; i < ns; i++) bg.stars.push({ x: Math.random() * bg.w, y: Math.random() * bg.h, r: Math.random() * 1.3 + .3, a: Math.random() * .6 + .25, s: Math.random() * 1.6 + .4, p: Math.random() * 6.28 });
+  for(i = 0; i < nm; i++) bg.motes.push({ x: Math.random() * bg.w, y: Math.random() * bg.h, r: Math.random() * 2 + .8, v: Math.random() * 10 + 5, c: i % 2 ? '125,230,255' : '190,160,255', a: Math.random() * .35 + .12 });
+}
+function bgDraw(t, animate){
+  var c = bg.ctx; c.clearRect(0, 0, bg.w, bg.h);
+  var i, s, m;
+  for(i = 0; i < bg.stars.length; i++){
+    s = bg.stars[i];
+    var a = animate ? s.a * (.55 + .45 * Math.sin(t / 1000 * s.s + s.p)) : s.a;
+    c.globalAlpha = a; c.fillStyle = '#cfe4ff';
+    c.fillRect(s.x, s.y, s.r, s.r);
+  }
+  if(animate){
+    for(i = 0; i < bg.motes.length; i++){
+      m = bg.motes[i];
+      m.y -= m.v / 60; m.x += Math.sin(t / 2500 + i) * .12;
+      if(m.y < -10){ m.y = bg.h + 10; m.x = Math.random() * bg.w; }
+      c.globalAlpha = m.a; c.fillStyle = 'rgb(' + m.c + ')';
+      c.beginPath(); c.arc(m.x, m.y, m.r, 0, 6.283); c.fill();
+    }
+  }
+  c.globalAlpha = 1;
+}
+function bgLoop(t){ if(!bg.running) return; bgDraw(t, true); bg.raf = requestAnimationFrame(bgLoop); }
+function bgApply(){
+  if(!bg.cv) return;
+  var animate = !state || (state.settings.particles !== false && state.settings.animations !== false);
+  if(animate && !document.hidden){
+    if(!bg.running){ bg.running = true; bg.raf = requestAnimationFrame(bgLoop); }
+  } else {
+    bg.running = false; cancelAnimationFrame(bg.raf);
+    bgDraw(0, false);
+  }
+}
+function bgInit(){
+  bg.cv = $('#bg-canvas');
+  if(!bg.cv.getContext) return;
+  bg.ctx = bg.cv.getContext('2d');
+  bgBuild(); bgApply();
+  var tmr = 0;
+  window.addEventListener('resize', function(){ clearTimeout(tmr); tmr = setTimeout(function(){ bgBuild(); bgApply(); }, 200); });
+  document.addEventListener('visibilitychange', bgApply);
+}
+function resolveSettings(){
+  if(state.settings.animations === null){
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    state.settings.animations = !reduce;
+  }
+}
+function applySettings(){
+  document.body.classList.toggle('no-motion', state.settings.animations === false);
+  bgApply();
+}
+
+/* =========================================================
+   11. TELEGRAM MINI APP TAYYORLIGI
+   =========================================================
+   Eslatma: Telegram foydalanuvchi ma’lumotlari (initDataUnsafe) bu yerda
+   ISHONCHLI deb hisoblanmaydi va progress/avtorizatsiya uchun ishlatilmaydi.
+   TODO(server): keyingi bosqichda `Telegram.WebApp.initData` qatori serverga
+   yuborilib, bot tokeni bilan HMAC orqali tekshirilishi shart.
+*/
+var TG = { active: false, wa: null, suggest: '' };
+function initTelegram(){
+  var inTG = /tgWebApp/i.test(location.hash + location.search) || !!window.TelegramWebviewProxy;
+  if(!inTG) return;
+  var s = document.createElement('script');
+  s.src = 'https://telegram.org/js/telegram-web-app.js';
+  s.async = true;
+  s.onload = function(){
+    try {
+      var wa = window.Telegram && window.Telegram.WebApp;
+      if(!wa) return;
+      TG.wa = wa; TG.active = true;
+      wa.ready();
+      if(wa.expand) wa.expand();
+      try { wa.setHeaderColor('#050a1f'); wa.setBackgroundColor('#050a1f'); } catch(e){}
+      var u = wa.initDataUnsafe && wa.initDataUnsafe.user;
+      if(u && u.first_name) TG.suggest = cleanName(u.first_name);   // faqat taklif (placeholder), tasdiqlangan ma’lumot emas
+    } catch(e){}
+  };
+  s.onerror = function(){ /* tarmoq yo‘q — ilova oddiy rejimda ishlayveradi */ };
+  document.head.appendChild(s);
+}
+
+/* =========================================================
+   12. KLAVIATURA VA ISHGA TUSHIRISH
+   ========================================================= */
+function onKeydown(e){
+  var cel = $('#celebrate');
+  if(e.key === 'Escape'){
+    if(!cel.hidden){ closeCelebration(); return; }
+    if(modalOpen()){ closeModal(); return; }
+  }
+  if(e.key === 'Tab'){
+    var root = !cel.hidden ? $('#celebrate-box') : modalOpen() ? modalBox : null;
+    if(root){
+      var f = focusables(root);
+      if(!f.length){ e.preventDefault(); root.focus(); return; }
+      var first = f[0], last = f[f.length - 1];
+      if(e.shiftKey && (document.activeElement === first || document.activeElement === root)){ e.preventDefault(); last.focus(); }
+      else if(!e.shiftKey && document.activeElement === last){ e.preventDefault(); first.focus(); }
+      else if(!root.contains(document.activeElement)){ e.preventDefault(); first.focus(); }
+    }
+    return;
+  }
+  if(e.ctrlKey || e.metaKey || e.altKey || modalOpen() || !cel.hidden || $('#app').hidden) return;
+  var t = e.target, tag = t && t.tagName;
+  if(tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
+  var idx = '123456'.indexOf(e.key);
+  if(idx > -1 && e.key.length === 1) navigate(NAV[idx].id);
+}
+
+function boot(){
+  state = loadState();
+  resolveSettings();
+  modalEl = $('#modal'); modalBox = $('#modal-box');
+  $('#modal-x').appendChild(icon('close', 22));
+  modalEl.addEventListener('mousedown', function(e){ if(e.target === modalEl) closeModal(); });
+  $('#logo-mark').appendChild(logoMark(44));
+  $('#brand-mark').appendChild(logoMark(38));
+  buildNav();
+  $('#hud-user').addEventListener('click', function(){ navigate('profile'); });
+  $('#enter-btn').addEventListener('click', function(){ if(state.introDone) enterApp(); else startOnboarding(); });
+  document.addEventListener('keydown', onKeydown);
+  initTelegram();
+  bgInit();
+  applySettings();
+  refreshSplash();
+  showScreen('splash');
+}
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+
+})();
+</script>
+</body>
+</html>
